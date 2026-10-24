@@ -1,7 +1,8 @@
 \set ON_ERROR_STOP on
 SET client_encoding = 'UTF8';
 
-DROP TABLE IF EXISTS StreamerPais, PlataformaUsuario, Usuario,
+DROP TABLE IF EXISTS Inscricao, NivelCanal, Patrocinio, Canal,
+                     StreamerPais, PlataformaUsuario, Usuario,
                      Plataforma, EmpresaPais, Empresa, Pais, Conversao CASCADE;
 
 CREATE TABLE Conversao (
@@ -68,4 +69,56 @@ CREATE TABLE StreamerPais (
     CONSTRAINT uq_streamer_passaporte UNIQUE (ddi_pais, nro_passaporte)
 );
 
+-- plataforma na frente do UNIQUE: o mesmo índice atende o filtro por plataforma
+-- fillfactor deixa folga na página para o UPDATE de qtd_videos não mexer nos índices
+CREATE TABLE Canal (
+    id_canal INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    nro_plataforma INTEGER NOT NULL REFERENCES Plataforma(nro),
+    id_streamer INTEGER NOT NULL REFERENCES Usuario(id_usuario),
+    tipo VARCHAR(10) NOT NULL,
+    data_inicio DATE NOT NULL,
+    descricao TEXT,
+    qtd_videos INTEGER NOT NULL DEFAULT 0,
+    qtd_visualizacoes BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT uq_canal_nome_plataforma UNIQUE (nro_plataforma, nome),
+    CONSTRAINT ck_canal_tipo CHECK (tipo IN ('privado', 'público', 'misto')),
+    CONSTRAINT ck_canal_qtd_vid CHECK (qtd_videos >= 0),
+    CONSTRAINT ck_canal_qtd_vis CHECK (qtd_visualizacoes >= 0)
+) WITH (fillfactor = 70);
+
+-- empresa na frente da PK por causa do filtro da consulta 5
+CREATE TABLE Patrocinio (
+    nro_empresa INTEGER NOT NULL REFERENCES Empresa(nro) ON DELETE CASCADE,
+    id_canal INTEGER NOT NULL REFERENCES Canal(id_canal) ON DELETE CASCADE,
+    valor NUMERIC(14,2) NOT NULL,
+    PRIMARY KEY (nro_empresa, id_canal),
+    CONSTRAINT ck_patrocinio_valor CHECK (valor > 0)
+);
+
+CREATE TABLE NivelCanal (
+    id_canal INTEGER NOT NULL REFERENCES Canal(id_canal) ON DELETE CASCADE,
+    nivel SMALLINT NOT NULL,
+    nome VARCHAR(50) NOT NULL,
+    valor NUMERIC(12,2) NOT NULL,
+    gif VARCHAR(255) NOT NULL,
+    PRIMARY KEY (id_canal, nivel),
+    CONSTRAINT uq_nivel_nome UNIQUE (id_canal, nome),
+    CONSTRAINT ck_nivel_faixa CHECK (nivel BETWEEN 1 AND 5),
+    CONSTRAINT ck_nivel_valor CHECK (valor >= 0),
+    CONSTRAINT ck_nivel_gif CHECK (gif ILIKE '%.gif')
+);
+
+-- membro na frente da PK por causa do filtro da consulta 6
+CREATE TABLE Inscricao (
+    id_canal INTEGER NOT NULL,
+    id_membro INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
+    nivel SMALLINT NOT NULL,
+    PRIMARY KEY (id_membro, id_canal),
+    CONSTRAINT fk_inscricao_nivel FOREIGN KEY (id_canal, nivel)
+        REFERENCES NivelCanal(id_canal, nivel) ON DELETE CASCADE
+);
+
 COMMENT ON COLUMN Plataforma.qtd_users IS 'Derivado: COUNT(PlataformaUsuario). Recalculo periodico.';
+COMMENT ON COLUMN Canal.qtd_videos IS 'Derivado: COUNT(Video). Mantido por trigger.';
+COMMENT ON COLUMN Canal.qtd_visualizacoes IS 'Derivado: SUM(Video.visu_total). Recalculo periodico.';
