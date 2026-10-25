@@ -1,7 +1,9 @@
 \set ON_ERROR_STOP on
 SET client_encoding = 'UTF8';
 
-DROP TABLE IF EXISTS Inscricao, NivelCanal, Patrocinio, Canal,
+DROP TABLE IF EXISTS MecanismoPlat, CartaoCredito, PayPal, BitCoin, Doacao,
+                     Comentario, Participa, Video,
+                     Inscricao, NivelCanal, Patrocinio, Canal,
                      StreamerPais, PlataformaUsuario, Usuario,
                      Plataforma, EmpresaPais, Empresa, Pais, Conversao CASCADE;
 
@@ -119,6 +121,79 @@ CREATE TABLE Inscricao (
         REFERENCES NivelCanal(id_canal, nivel) ON DELETE CASCADE
 );
 
+CREATE TABLE Video (
+    id_video INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_canal INTEGER NOT NULL REFERENCES Canal(id_canal) ON DELETE CASCADE,
+    titulo VARCHAR(200) NOT NULL,
+    dataH TIMESTAMP NOT NULL,
+    tema VARCHAR(100) NOT NULL,
+    duracao INTERVAL NOT NULL,
+    visu_simul INTEGER NOT NULL DEFAULT 0,
+    visu_total BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT uq_video_canal_data_titulo UNIQUE (id_canal, dataH, titulo),
+    CONSTRAINT ck_video_duracao CHECK (duracao > INTERVAL '0'),
+    CONSTRAINT ck_video_visu CHECK (visu_simul >= 0 AND visu_total >= 0 AND visu_simul <= visu_total)
+) WITH (fillfactor = 80);
+
+CREATE TABLE Participa (
+    id_video INTEGER NOT NULL REFERENCES Video(id_video) ON DELETE CASCADE,
+    id_streamer INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
+    PRIMARY KEY (id_video, id_streamer)
+);
+
+CREATE TABLE Comentario (
+    id_video INTEGER NOT NULL REFERENCES Video(id_video) ON DELETE CASCADE,
+    id_usuario INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE RESTRICT,
+    seq INTEGER NOT NULL,
+    texto TEXT NOT NULL,
+    dataH TIMESTAMP NOT NULL,
+    coment_on BOOLEAN NOT NULL,
+    PRIMARY KEY (id_video, id_usuario, seq),
+    CONSTRAINT ck_comentario_seq CHECK (seq > 0)
+);
+
+-- id_doacao substitui a chave de 4 colunas nas tabelas de forma de pagamento
+CREATE TABLE Doacao (
+    id_doacao INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_video INTEGER NOT NULL,
+    id_usuario INTEGER NOT NULL,
+    seq_comentario INTEGER NOT NULL,
+    seq_pg INTEGER NOT NULL,
+    valor NUMERIC(14,2) NOT NULL,
+    status VARCHAR(10) NOT NULL,
+    CONSTRAINT uq_doacao_natural UNIQUE (id_video, id_usuario, seq_comentario, seq_pg),
+    CONSTRAINT fk_doacao_comentario FOREIGN KEY (id_video, id_usuario, seq_comentario)
+        REFERENCES Comentario(id_video, id_usuario, seq) ON DELETE CASCADE,
+    CONSTRAINT ck_doacao_seq CHECK (seq_pg > 0),
+    CONSTRAINT ck_doacao_valor CHECK (valor > 0),
+    CONSTRAINT ck_doacao_status CHECK (status IN ('recusado', 'recebido', 'lido'))
+);
+
+CREATE TABLE BitCoin (
+    id_doacao INTEGER PRIMARY KEY REFERENCES Doacao(id_doacao) ON DELETE CASCADE,
+    TxID VARCHAR(128) NOT NULL UNIQUE
+);
+
+CREATE TABLE PayPal (
+    id_doacao INTEGER PRIMARY KEY REFERENCES Doacao(id_doacao) ON DELETE CASCADE,
+    IdPayPal VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE CartaoCredito (
+    id_doacao INTEGER PRIMARY KEY REFERENCES Doacao(id_doacao) ON DELETE CASCADE,
+    nro VARCHAR(25) NOT NULL,
+    bandeira VARCHAR(30) NOT NULL,
+    dataH TIMESTAMP NOT NULL,
+    CONSTRAINT ck_cartao_nro CHECK (nro ~ '^[0-9]{12,19}$')
+);
+
+CREATE TABLE MecanismoPlat (
+    id_doacao INTEGER PRIMARY KEY REFERENCES Doacao(id_doacao) ON DELETE CASCADE,
+    seq_plataforma INTEGER NOT NULL,
+    CONSTRAINT ck_mecplat_seq CHECK (seq_plataforma > 0)
+);
+
 COMMENT ON COLUMN Plataforma.qtd_users IS 'Derivado: COUNT(PlataformaUsuario). Recalculo periodico.';
 COMMENT ON COLUMN Canal.qtd_videos IS 'Derivado: COUNT(Video). Mantido por trigger.';
 COMMENT ON COLUMN Canal.qtd_visualizacoes IS 'Derivado: SUM(Video.visu_total). Recalculo periodico.';
+COMMENT ON COLUMN Doacao.valor IS 'Na moeda do pais de residencia do doador; converter via Conversao.fator_conver.';
