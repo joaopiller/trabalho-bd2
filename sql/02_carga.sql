@@ -178,6 +178,180 @@ FROM (
 ) AS s
 ON CONFLICT DO NOTHING;
 
+INSERT INTO Patrocinio (nro_empresa, id_canal, valor)
+SELECT 1 + floor(random() * e.ne)::int,
+       1 + floor(c.nc * power(random(), 2))::int,
+       round(power(10, 2.7 + random() * 2.6)::numeric, 2)
+FROM generate_series(1, 3400 + floor(random() * 300)::int),
+     (SELECT count(*) AS ne FROM Empresa) AS e, (SELECT count(*) AS nc FROM Canal) AS c
+ON CONFLICT DO NOTHING;
+
+-- o dono não é membro do próprio canal; níveis baratos são mais comuns
+INSERT INTO Inscricao (id_canal, id_membro, nivel)
+SELECT s.id_canal, s.id_membro, 1 + floor(5 * power(random(), 2.5))::int
+FROM (
+    SELECT 1 + floor(c.nc * power(random(), 2))::int AS id_canal,
+           1 + floor(random() * u.nu)::int AS id_membro
+    FROM generate_series(1, 10600 + floor(random() * 300)::int),
+         (SELECT count(*) AS nc FROM Canal) AS c, (SELECT count(*) AS nu FROM Usuario) AS u
+) AS s
+JOIN Canal c ON c.id_canal = s.id_canal AND c.id_streamer <> s.id_membro
+ON CONFLICT DO NOTHING;
+
+INSERT INTO Video (id_canal, titulo, dataH, tema, duracao, visu_simul, visu_total)
+SELECT c.id_canal,
+       (ARRAY['Gameplay de', 'Live de', 'Jogando', 'Torneio de', 'Speedrun de', 'Review de', 'Rankeada de',
+              'Maratona de'])[1 + floor(random() * 8)::int] || ' ' || j.nome || ' #' || (1 + floor(random() * 300))::int,
+       c.data_inicio + random() * (TIMESTAMP '2026-10-31' - c.data_inicio),
+       j.tema,
+       make_interval(mins => 3 + floor(power(random(), 1.3) * 420)::int),
+       floor(s.visu * (0.01 + random() * 0.3))::int,
+       s.visu
+FROM (
+    SELECT 1 + floor(c.nc * power(random(), 2))::int AS id_canal,
+           1 + floor(random() * 24)::int AS jogo,
+           floor(power(10, 1.7 + random() * 5))::bigint AS visu
+    FROM generate_series(1, 10600 + floor(random() * 400)::int), (SELECT count(*) AS nc FROM Canal) AS c
+) AS s
+JOIN Canal c ON c.id_canal = s.id_canal
+JOIN (VALUES
+    (1, 'Minecraft', 'Sandbox'), (2, 'League of Legends', 'MOBA'), (3, 'Valorant', 'FPS'),
+    (4, 'Counter-Strike 2', 'FPS'), (5, 'Fortnite', 'Battle Royale'), (6, 'GTA V', 'Mundo aberto'),
+    (7, 'EA FC 26', 'Esporte'), (8, 'Elden Ring', 'RPG'), (9, 'Dota 2', 'MOBA'),
+    (10, 'Apex Legends', 'Battle Royale'), (11, 'Rocket League', 'Esporte'), (12, 'Overwatch 2', 'FPS'),
+    (13, 'Hollow Knight', 'Indie'), (14, 'Stardew Valley', 'Simulação'), (15, 'Free Fire', 'Battle Royale'),
+    (16, 'Call of Duty: Warzone', 'Battle Royale'), (17, 'The Sims 4', 'Simulação'), (18, 'Among Us', 'Party'),
+    (19, 'Roblox', 'Sandbox'), (20, 'Baldur''s Gate 3', 'RPG'), (21, 'Hades II', 'Indie'),
+    (22, 'Celeste', 'Indie'), (23, 'Age of Empires IV', 'Estratégia'), (24, 'Civilization VII', 'Estratégia')
+) AS j(id, nome, tema) ON j.id = s.jogo;
+
+INSERT INTO Participa (id_video, id_streamer)
+SELECT s.id_video, t.id_usuario
+FROM (
+    SELECT 1 + floor(random() * v.nv)::int AS id_video, 1 + floor(random() * st.ns)::int AS n
+    FROM generate_series(1, 3500 + floor(random() * 300)::int),
+         (SELECT count(*) AS nv FROM Video) AS v, (SELECT count(*) AS ns FROM tmp_streamer) AS st
+) AS s
+JOIN tmp_streamer t ON t.n = s.n
+JOIN Video v ON v.id_video = s.id_video
+JOIN Canal c ON c.id_canal = v.id_canal AND c.id_streamer <> t.id_usuario
+ON CONFLICT DO NOTHING;
+
+-- cada par (vídeo, usuário) sorteado rende de 1 a 4 comentários;
+-- o online cai durante a transmissão e o offline, até 120 dias depois
+CREATE TEMP TABLE tmp_coment ON COMMIT DROP AS
+SELECT id_video, id_usuario, coment_on, dataH,
+       row_number() OVER (PARTITION BY id_video, id_usuario ORDER BY dataH) AS seq
+FROM (
+    SELECT c.id_video, c.id_usuario, c.coment_on,
+           CASE WHEN c.coment_on THEN c.inicio + c.r * c.duracao
+                ELSE c.inicio + c.duracao + c.r * INTERVAL '120 days' END AS dataH
+    FROM (
+        SELECT s.id_video, s.id_usuario, v.dataH AS inicio, v.duracao,
+               random() < 0.6 AS coment_on, random() AS r
+        FROM (
+            SELECT 1 + floor(v.nv * power(random(), 2))::int AS id_video,
+                   1 + floor(u.nu * power(random(), 2))::int AS id_usuario,
+                   1 + floor(4 * power(random(), 3))::int AS qtd
+            FROM generate_series(1, 6700 + floor(random() * 300)::int),
+                 (SELECT count(*) AS nv FROM Video) AS v, (SELECT count(*) AS nu FROM Usuario) AS u
+        ) AS s
+        CROSS JOIN generate_series(1, s.qtd)
+        JOIN Video v ON v.id_video = s.id_video
+    ) AS c
+) AS t;
+
+INSERT INTO Comentario (id_video, id_usuario, seq, texto, dataH, coment_on)
+SELECT id_video, id_usuario, seq,
+       (ARRAY['GG!', 'Que jogada!', 'kkkkkkkk', 'Salve do Rio!', 'Primeiro!', 'Qual é o seu setup?',
+              'Muito bom o vídeo', 'Traz mais desse jogo', 'F', 'Clipa isso!', 'Boa noite, chat',
+              'Esse boss é impossível', 'Joga com os inscritos', 'Melhor live da semana', 'Tá de hack?',
+              'Faltou o link do torneio'])[1 + floor(random() * 16)::int],
+       dataH, coment_on
+FROM tmp_coment;
+
+-- quase metade dos comentários traz doação e poucos trazem duas;
+-- o valor é sorteado em dólar e gravado na moeda do país do doador
+CREATE TEMP TABLE tmp_doacao ON COMMIT DROP AS
+SELECT t.id_video, t.id_usuario, t.seq AS seq_comentario, k AS seq_pg, t.dataH,
+       round((power(10, random() * 2.5) / cv.fator_conver)::numeric, 2) AS valor,
+       random() AS r_status, random() AS r_forma
+FROM (SELECT *, (random() < 0.45)::int * (1 + (random() < 0.07)::int) AS qtd FROM tmp_coment) AS t
+CROSS JOIN generate_series(1, t.qtd) AS k
+JOIN Usuario u ON u.id_usuario = t.id_usuario
+JOIN Pais pa ON pa.DDI = u.pais_residencia
+JOIN Conversao cv ON cv.moeda = pa.moeda;
+
+INSERT INTO Doacao (id_video, id_usuario, seq_comentario, seq_pg, valor, status)
+SELECT id_video, id_usuario, seq_comentario, seq_pg, valor,
+       CASE WHEN r_status < 0.08 THEN 'recusado' WHEN r_status < 0.38 THEN 'recebido' ELSE 'lido' END
+FROM tmp_doacao;
+
+INSERT INTO MecanismoPlat (id_doacao, seq_plataforma)
+SELECT d.id_doacao,
+       row_number() OVER (PARTITION BY d.id_video, d.id_usuario, d.seq_comentario ORDER BY d.seq_pg)
+FROM tmp_doacao t
+JOIN Doacao d USING (id_video, id_usuario, seq_comentario, seq_pg)
+WHERE t.r_forma < 0.34;
+
+INSERT INTO CartaoCredito (id_doacao, nro, bandeira, dataH)
+SELECT s.id_doacao,
+       (ARRAY['4', '5', '6', '3'])[s.b] || lpad(floor(random() * 1e15)::bigint::text, 15, '0'),
+       (ARRAY['Visa', 'Mastercard', 'Elo', 'Amex'])[s.b],
+       s.dataH
+FROM (
+    SELECT d.id_doacao, t.dataH, 1 + floor(4 * power(random(), 1.6))::int AS b
+    FROM tmp_doacao t
+    JOIN Doacao d USING (id_video, id_usuario, seq_comentario, seq_pg)
+    WHERE t.r_forma >= 0.34 AND t.r_forma < 0.58
+) AS s;
+
+INSERT INTO PayPal (id_doacao, IdPayPal)
+SELECT d.id_doacao, 'PAYID-' || upper(substr(md5(random()::text), 1, 24))
+FROM tmp_doacao t
+JOIN Doacao d USING (id_video, id_usuario, seq_comentario, seq_pg)
+WHERE t.r_forma >= 0.58 AND t.r_forma < 0.80;
+
+INSERT INTO BitCoin (id_doacao, TxID)
+SELECT d.id_doacao, md5(random()::text) || md5(random()::text)
+FROM tmp_doacao t
+JOIN Doacao d USING (id_video, id_usuario, seq_comentario, seq_pg)
+WHERE t.r_forma >= 0.80;
+
+UPDATE Canal c
+SET qtd_videos = s.n, qtd_visualizacoes = s.v
+FROM (SELECT id_canal, count(*) AS n, sum(visu_total) AS v FROM Video GROUP BY id_canal) AS s
+WHERE s.id_canal = c.id_canal;
+
+UPDATE Plataforma p
+SET qtd_users = s.n
+FROM (SELECT nro_plataforma, count(*) AS n FROM PlataformaUsuario GROUP BY nro_plataforma) AS s
+WHERE s.nro_plataforma = p.nro;
+
 COMMIT;
 
+-- os dois UPDATEs acima deixaram uma versão morta de cada tupla
+VACUUM FULL Canal, Plataforma;
 ANALYZE;
+
+SELECT 'Conversao' AS tabela, count(*) AS tuplas FROM Conversao UNION ALL
+SELECT 'Pais', count(*) FROM Pais UNION ALL
+SELECT 'Empresa', count(*) FROM Empresa UNION ALL
+SELECT 'EmpresaPais', count(*) FROM EmpresaPais UNION ALL
+SELECT 'Plataforma', count(*) FROM Plataforma UNION ALL
+SELECT 'Usuario', count(*) FROM Usuario UNION ALL
+SELECT 'PlataformaUsuario', count(*) FROM PlataformaUsuario UNION ALL
+SELECT 'StreamerPais', count(*) FROM StreamerPais UNION ALL
+SELECT 'Canal', count(*) FROM Canal UNION ALL
+SELECT 'NivelCanal', count(*) FROM NivelCanal UNION ALL
+SELECT 'Patrocinio', count(*) FROM Patrocinio UNION ALL
+SELECT 'Inscricao', count(*) FROM Inscricao UNION ALL
+SELECT 'Video', count(*) FROM Video UNION ALL
+SELECT 'Participa', count(*) FROM Participa UNION ALL
+SELECT 'Comentario', count(*) FROM Comentario UNION ALL
+SELECT 'Doacao', count(*) FROM Doacao UNION ALL
+SELECT 'BitCoin', count(*) FROM BitCoin UNION ALL
+SELECT 'PayPal', count(*) FROM PayPal UNION ALL
+SELECT 'CartaoCredito', count(*) FROM CartaoCredito UNION ALL
+SELECT 'MecanismoPlat', count(*) FROM MecanismoPlat
+ORDER BY 1;
