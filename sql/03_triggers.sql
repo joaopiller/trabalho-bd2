@@ -13,6 +13,7 @@ DROP TRIGGER IF EXISTS bitcoin_subtipo_bi ON BitCoin;
 DROP TRIGGER IF EXISTS paypal_subtipo_bi ON PayPal;
 DROP TRIGGER IF EXISTS cartaocredito_subtipo_bi ON CartaoCredito;
 DROP TRIGGER IF EXISTS mecanismoplat_subtipo_bi ON MecanismoPlat;
+DROP TRIGGER IF EXISTS participa_dono_bi ON Participa;
 
 -- Comentario.seq: sequencial por (vídeo, usuário)
 CREATE OR REPLACE FUNCTION trg_comentario_insere() RETURNS trigger AS $$
@@ -188,3 +189,43 @@ CREATE CONSTRAINT TRIGGER doacao_total_ai
 AFTER INSERT ON Doacao
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE PROCEDURE trg_doacao_total();
+
+-- o dono do canal já participa do vídeo; gravá-lo em Participa seria redundância
+CREATE OR REPLACE FUNCTION trg_participa_dono() RETURNS trigger AS $$
+DECLARE
+    v_dono Canal.id_streamer%TYPE;
+BEGIN
+    SELECT c.id_streamer INTO v_dono
+      FROM Video v JOIN Canal c ON c.id_canal = v.id_canal
+     WHERE v.id_video = NEW.id_video;
+    IF v_dono = NEW.id_streamer THEN
+        RAISE EXCEPTION 'Streamer % é dono do canal do vídeo %', NEW.id_streamer, NEW.id_video;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER participa_dono_bi
+BEFORE INSERT OR UPDATE ON Participa
+FOR EACH ROW EXECUTE PROCEDURE trg_participa_dono();
+
+-- recálculo periódico de qtd_users e qtd_visualizacoes (agendar)
+CREATE OR REPLACE FUNCTION recalcular_derivados() RETURNS void AS $$
+BEGIN
+    UPDATE Canal c
+       SET qtd_visualizacoes = s.vis, qtd_videos = s.vid
+      FROM (SELECT ca.id_canal, COALESCE(SUM(v.visu_total), 0) AS vis, COUNT(v.id_video) AS vid
+              FROM Canal ca LEFT JOIN Video v ON v.id_canal = ca.id_canal
+             GROUP BY ca.id_canal) AS s
+     WHERE s.id_canal = c.id_canal
+       AND (c.qtd_visualizacoes <> s.vis OR c.qtd_videos <> s.vid);
+
+    UPDATE Plataforma p
+       SET qtd_users = s.n
+      FROM (SELECT pl.nro, COUNT(pu.id_usuario) AS n
+              FROM Plataforma pl LEFT JOIN PlataformaUsuario pu ON pu.nro_plataforma = pl.nro
+             GROUP BY pl.nro) AS s
+     WHERE s.nro = p.nro
+       AND p.qtd_users <> s.n;
+END;
+$$ LANGUAGE plpgsql;
