@@ -4,7 +4,15 @@ SET client_encoding = 'UTF8';
 DROP TRIGGER IF EXISTS comentario_bi ON Comentario;
 DROP TRIGGER IF EXISTS comentario_bu ON Comentario;
 DROP TRIGGER IF EXISTS doacao_seq_bi ON Doacao;
+DROP TRIGGER IF EXISTS doacao_total_ai ON Doacao;
 DROP TRIGGER IF EXISTS mecplat_seq_bi ON MecanismoPlat;
+DROP TRIGGER IF EXISTS video_qtd_ai ON Video;
+DROP TRIGGER IF EXISTS video_qtd_ad ON Video;
+DROP TRIGGER IF EXISTS video_qtd_au ON Video;
+DROP TRIGGER IF EXISTS bitcoin_subtipo_bi ON BitCoin;
+DROP TRIGGER IF EXISTS paypal_subtipo_bi ON PayPal;
+DROP TRIGGER IF EXISTS cartaocredito_subtipo_bi ON CartaoCredito;
+DROP TRIGGER IF EXISTS mecanismoplat_subtipo_bi ON MecanismoPlat;
 
 -- Comentario.seq: sequencial por (vídeo, usuário)
 CREATE OR REPLACE FUNCTION trg_comentario_insere() RETURNS trigger AS $$
@@ -98,3 +106,85 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER mecplat_seq_bi
 BEFORE INSERT ON MecanismoPlat
 FOR EACH ROW EXECUTE PROCEDURE trg_mecplat_seq();
+
+-- Canal.qtd_videos acompanha INSERT, DELETE e troca de canal do vídeo
+CREATE OR REPLACE FUNCTION trg_video_insere() RETURNS trigger AS $$
+BEGIN
+    UPDATE Canal SET qtd_videos = qtd_videos + 1 WHERE id_canal = NEW.id_canal;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION trg_video_remove() RETURNS trigger AS $$
+BEGIN
+    UPDATE Canal SET qtd_videos = qtd_videos - 1 WHERE id_canal = OLD.id_canal;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION trg_video_muda_canal() RETURNS trigger AS $$
+BEGIN
+    IF NEW.id_canal <> OLD.id_canal THEN
+        UPDATE Canal SET qtd_videos = qtd_videos - 1 WHERE id_canal = OLD.id_canal;
+        UPDATE Canal SET qtd_videos = qtd_videos + 1 WHERE id_canal = NEW.id_canal;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER video_qtd_ai AFTER INSERT ON Video
+FOR EACH ROW EXECUTE PROCEDURE trg_video_insere();
+
+CREATE TRIGGER video_qtd_ad AFTER DELETE ON Video
+FOR EACH ROW EXECUTE PROCEDURE trg_video_remove();
+
+CREATE TRIGGER video_qtd_au AFTER UPDATE OF id_canal ON Video
+FOR EACH ROW EXECUTE PROCEDURE trg_video_muda_canal();
+
+-- especialização disjunta: a doação só pode estar em uma das quatro tabelas
+CREATE OR REPLACE FUNCTION trg_doacao_subtipo() RETURNS trigger AS $$
+BEGIN
+    -- trava a doação para duas transações não gravarem formas diferentes ao mesmo tempo
+    PERFORM 1 FROM Doacao WHERE id_doacao = NEW.id_doacao FOR NO KEY UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Doação % não existe', NEW.id_doacao;
+    END IF;
+    IF EXISTS (SELECT 1 FROM BitCoin WHERE id_doacao = NEW.id_doacao)
+       OR EXISTS (SELECT 1 FROM PayPal WHERE id_doacao = NEW.id_doacao)
+       OR EXISTS (SELECT 1 FROM CartaoCredito WHERE id_doacao = NEW.id_doacao)
+       OR EXISTS (SELECT 1 FROM MecanismoPlat WHERE id_doacao = NEW.id_doacao) THEN
+        RAISE EXCEPTION 'Doação % já tem forma de pagamento', NEW.id_doacao;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER bitcoin_subtipo_bi BEFORE INSERT OR UPDATE OF id_doacao ON BitCoin
+FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
+
+CREATE TRIGGER paypal_subtipo_bi BEFORE INSERT OR UPDATE OF id_doacao ON PayPal
+FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
+
+CREATE TRIGGER cartaocredito_subtipo_bi BEFORE INSERT OR UPDATE OF id_doacao ON CartaoCredito
+FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
+
+CREATE TRIGGER mecanismoplat_subtipo_bi BEFORE INSERT OR UPDATE OF id_doacao ON MecanismoPlat
+FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
+
+-- especialização total: conferida no COMMIT, porque a forma de pagamento é inserida depois da doação
+CREATE OR REPLACE FUNCTION trg_doacao_total() RETURNS trigger AS $$
+BEGIN
+    IF NOT (EXISTS (SELECT 1 FROM BitCoin WHERE id_doacao = NEW.id_doacao)
+            OR EXISTS (SELECT 1 FROM PayPal WHERE id_doacao = NEW.id_doacao)
+            OR EXISTS (SELECT 1 FROM CartaoCredito WHERE id_doacao = NEW.id_doacao)
+            OR EXISTS (SELECT 1 FROM MecanismoPlat WHERE id_doacao = NEW.id_doacao)) THEN
+        RAISE EXCEPTION 'Doação % sem forma de pagamento', NEW.id_doacao;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER doacao_total_ai
+AFTER INSERT ON Doacao
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE trg_doacao_total();
