@@ -178,3 +178,83 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql;
+
+-- consulta 8
+CREATE OR REPLACE FUNCTION top_canais_patrocinio(p_k INTEGER)
+RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, patrocinio_usd NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT m.nome, m.nro_plataforma, m.patrocinio_usd
+      FROM mv_resumo_canal m
+     WHERE m.patrocinio_usd > 0
+     ORDER BY m.patrocinio_usd DESC
+     LIMIT p_k;
+END;
+$$ LANGUAGE plpgsql;
+
+-- consulta 9
+CREATE OR REPLACE FUNCTION top_canais_membros(p_k INTEGER)
+RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, qtd_membros BIGINT, membros_usd_mes NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT m.nome, m.nro_plataforma, m.qtd_membros, m.membros_usd_mes
+      FROM mv_resumo_canal m
+     WHERE m.membros_usd_mes > 0
+     ORDER BY m.membros_usd_mes DESC
+     LIMIT p_k;
+END;
+$$ LANGUAGE plpgsql;
+
+-- consulta 10
+CREATE OR REPLACE FUNCTION top_canais_doacoes(p_k INTEGER)
+RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, qtd_doacoes BIGINT, doacoes_usd NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT m.nome, m.nro_plataforma, m.qtd_doacoes, round(m.doacoes_usd, 2)
+      FROM mv_resumo_canal m
+     WHERE m.doacoes_usd > 0
+     ORDER BY m.doacoes_usd DESC
+     LIMIT p_k;
+END;
+$$ LANGUAGE plpgsql;
+
+-- consulta 11
+CREATE OR REPLACE FUNCTION top_canais_faturamento(p_k INTEGER)
+RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, patrocinio_usd NUMERIC,
+               membros_usd_mes NUMERIC, doacoes_usd NUMERIC, receita_usd NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT m.nome, m.nro_plataforma, m.patrocinio_usd, m.membros_usd_mes,
+           round(m.doacoes_usd, 2), round(m.receita_usd, 2)
+      FROM mv_resumo_canal m
+     ORDER BY m.receita_usd DESC
+     LIMIT p_k;
+END;
+$$ LANGUAGE plpgsql;
+
+-- consulta 12: streamers são os donos de canal na plataforma
+CREATE OR REPLACE FUNCTION top_plataformas(p_k INTEGER, p_plataforma INTEGER DEFAULT NULL)
+RETURNS TABLE (plataforma VARCHAR, qtd_streamers BIGINT, qtd_canais BIGINT) AS $$
+BEGIN
+    IF p_plataforma IS NULL THEN
+        RETURN QUERY
+        SELECT pl.nome, t.streamers, t.canais
+          FROM (SELECT s.nro_plataforma,
+                       COUNT(*) AS streamers,
+                       SUM(s.qtd_canais)::BIGINT AS canais
+                  FROM vw_streamer_plataforma s
+                 GROUP BY s.nro_plataforma
+                 ORDER BY 2 DESC, 3 DESC
+                 LIMIT p_k) AS t
+          JOIN Plataforma pl ON pl.nro = t.nro_plataforma
+         ORDER BY t.streamers DESC, t.canais DESC;
+    ELSE
+        RETURN QUERY
+        SELECT pl.nome, COUNT(*), SUM(s.qtd_canais)::BIGINT
+          FROM vw_streamer_plataforma s
+          JOIN Plataforma pl ON pl.nro = s.nro_plataforma
+         WHERE s.nro_plataforma = p_plataforma
+         GROUP BY pl.nome;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
