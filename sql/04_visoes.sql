@@ -2,6 +2,7 @@
 
 DROP MATERIALIZED VIEW IF EXISTS mv_interacoes_video;
 DROP MATERIALIZED VIEW IF EXISTS mv_resumo_canal;
+DROP VIEW IF EXISTS vw_streamer_plataforma, vw_patrocinio_empresa, vw_membro_usuario;
 
 -- receita em USD e interações por canal (consultas 3, 4 e 7 a 11)
 CREATE MATERIALIZED VIEW mv_resumo_canal AS
@@ -89,6 +90,56 @@ CREATE UNIQUE INDEX uq_mv_interacoes_video ON mv_interacoes_video USING btree (i
 -- a listagem ordenada por total sai do índice, sem Sort, lendo as páginas em sequência
 CREATE INDEX idx_mv_interacoes_total ON mv_interacoes_video USING btree (total_comentarios DESC);
 CLUSTER mv_interacoes_video USING idx_mv_interacoes_total;
+
+-- canais, vídeos e visualizações por streamer e plataforma (consultas 1 e 12).
+-- só lê Canal: nick e nome da plataforma são buscados depois de agregar, por quem consulta
+CREATE VIEW vw_streamer_plataforma AS
+SELECT id_streamer,
+       nro_plataforma,
+       COUNT(*) AS qtd_canais,
+       SUM(qtd_videos) AS qtd_videos,
+       SUM(qtd_visualizacoes) AS qtd_visualizacoes
+FROM Canal
+GROUP BY id_streamer, nro_plataforma;
+
+-- patrocínios vigentes por empresa (consulta 5)
+CREATE VIEW vw_patrocinio_empresa AS
+SELECT e.nro AS nro_empresa,
+       e.nome AS empresa,
+       e.nome_fantasia,
+       c.id_canal,
+       c.nome AS canal,
+       c.nro_plataforma,
+       p.valor AS valor_usd
+FROM Patrocinio p
+JOIN Empresa e ON e.nro = p.nro_empresa
+JOIN Canal c ON c.id_canal = p.id_canal;
+
+-- canais e gasto mensal por usuário (consulta 6)
+CREATE VIEW vw_membro_usuario AS
+SELECT u.id_usuario,
+       u.nick,
+       COUNT(*) AS qtd_canais,
+       SUM(n.valor) AS total_mensal_usd
+FROM Inscricao i
+JOIN NivelCanal n ON n.id_canal = i.id_canal AND n.nivel = i.nivel
+JOIN Usuario u ON u.id_usuario = i.id_membro
+GROUP BY u.id_usuario, u.nick;
+
+-- agendar junto com recalcular_derivados(). O REFRESH CONCURRENTLY não bloqueia leitura,
+-- mas vai desfazendo a ordem física; p_reorganizar refaz o CLUSTER (bloqueia a visão)
+CREATE OR REPLACE FUNCTION atualizar_visoes(p_reorganizar BOOLEAN DEFAULT FALSE) RETURNS void AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW CONCURRENTLY mv_resumo_canal;
+    REFRESH MATERIALIZED VIEW CONCURRENTLY mv_interacoes_video;
+    IF p_reorganizar THEN
+        CLUSTER mv_resumo_canal;
+        CLUSTER mv_interacoes_video;
+    END IF;
+    ANALYZE mv_resumo_canal;
+    ANALYZE mv_interacoes_video;
+END;
+$$ LANGUAGE plpgsql;
 
 ANALYZE mv_resumo_canal;
 ANALYZE mv_interacoes_video;
