@@ -1,6 +1,7 @@
 \set ON_ERROR_STOP on
 SET client_encoding = 'UTF8';
 
+-- acha o id do canal pelo nome; a plataforma só é necessária se o nome existir em mais de uma
 CREATE OR REPLACE FUNCTION id_do_canal(p_canal VARCHAR, p_plataforma INTEGER) RETURNS INTEGER AS $$
 DECLARE
     v_id Canal.id_canal%TYPE;
@@ -21,6 +22,7 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 1: streamers com mais vídeos, filtro opcional por plataforma
 CREATE OR REPLACE FUNCTION streamers_mais_videos(p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (streamer VARCHAR, qtd_videos BIGINT, visualizacoes NUMERIC) AS $$
 BEGIN
@@ -45,6 +47,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 2: vídeos mais comentados (online, offline e total), filtro opcional por canal
 CREATE OR REPLACE FUNCTION videos_mais_comentados(p_canal VARCHAR DEFAULT NULL, p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, titulo VARCHAR, postado_em TIMESTAMP,
                coment_online BIGINT, coment_offline BIGINT, total_comentarios BIGINT) AS $$
@@ -69,6 +72,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 3: canais por total de interações e média por vídeo, filtro opcional por streamer
 CREATE OR REPLACE FUNCTION canais_por_interacoes(p_streamer VARCHAR DEFAULT NULL)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, interacoes BIGINT,
                qtd_videos INTEGER, media_por_video NUMERIC) AS $$
@@ -90,6 +94,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 4: canais pela média de doação por comentário, filtro opcional por plataforma
 CREATE OR REPLACE FUNCTION canais_por_media_doacao(p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, media_por_comentario NUMERIC,
                qtd_doacoes BIGINT, total_usd NUMERIC) AS $$
@@ -112,6 +117,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 5: canais patrocinados e valores pagos por empresa, filtro opcional por empresa
 CREATE OR REPLACE FUNCTION patrocinios_por_empresa(p_empresa INTEGER DEFAULT NULL)
 RETURNS TABLE (nro_empresa INTEGER, empresa VARCHAR, canal VARCHAR,
                nro_plataforma INTEGER, valor_usd NUMERIC) AS $$
@@ -131,6 +137,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 6: de quantos canais cada usuário é membro e o gasto mensal, filtro opcional por usuário
 CREATE OR REPLACE FUNCTION gasto_dos_membros(p_usuario VARCHAR DEFAULT NULL)
 RETURNS TABLE (usuario VARCHAR, qtd_canais BIGINT, total_mensal_usd NUMERIC) AS $$
 BEGIN
@@ -148,6 +155,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 7: canais que já receberam doação e o total recebido, filtro opcional por canal
 CREATE OR REPLACE FUNCTION canais_com_doacao(p_canal VARCHAR DEFAULT NULL, p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, total_usd NUMERIC) AS $$
 DECLARE
@@ -169,6 +177,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 8: os k canais com mais patrocínio
 CREATE OR REPLACE FUNCTION top_canais_patrocinio(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, patrocinio_usd NUMERIC) AS $$
 BEGIN
@@ -181,6 +190,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 9: os k canais que mais recebem de membros
 CREATE OR REPLACE FUNCTION top_canais_membros(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, qtd_membros BIGINT, membros_usd_mes NUMERIC) AS $$
 BEGIN
@@ -193,6 +203,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 10: os k canais com mais doações
 CREATE OR REPLACE FUNCTION top_canais_doacoes(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, qtd_doacoes BIGINT, doacoes_usd NUMERIC) AS $$
 BEGIN
@@ -205,6 +216,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 11: os k canais que mais faturam somando patrocínio, membros e doações
 CREATE OR REPLACE FUNCTION top_canais_faturamento(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, patrocinio_usd NUMERIC,
                membros_usd_mes NUMERIC, doacoes_usd NUMERIC, receita_usd NUMERIC) AS $$
@@ -218,6 +230,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- consulta 12: top k plataformas por streamers e canais, filtro opcional por plataforma
 CREATE OR REPLACE FUNCTION top_plataformas(p_k INTEGER, p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (plataforma VARCHAR, qtd_streamers BIGINT, qtd_canais BIGINT) AS $$
 BEGIN

@@ -16,6 +16,7 @@ DROP TRIGGER IF EXISTS cartaocredito_subtipo_bi ON CartaoCredito;
 DROP TRIGGER IF EXISTS mecanismoplat_subtipo_bi ON MecanismoPlat;
 DROP TRIGGER IF EXISTS participa_dono_bi ON Participa;
 
+-- numera o comentário (seq por vídeo e usuário) e barra data anterior à do vídeo
 CREATE OR REPLACE FUNCTION trg_comentario_insere() RETURNS trigger AS $$
 DECLARE
     v_data_video Video.dataH%TYPE;
@@ -28,6 +29,7 @@ BEGIN
         RAISE EXCEPTION 'Comentário (%) anterior ao vídeo % (%)', NEW.dataH, NEW.id_video, v_data_video;
     END IF;
     IF NEW.seq IS NULL THEN
+        -- trava o usuário pra duas sessões não pegarem o mesmo seq
         PERFORM 1 FROM Usuario WHERE id_usuario = NEW.id_usuario FOR NO KEY UPDATE;
         SELECT COALESCE(MAX(seq), 0) + 1 INTO NEW.seq
           FROM Comentario
@@ -41,6 +43,7 @@ CREATE TRIGGER comentario_bi
 BEFORE INSERT ON Comentario
 FOR EACH ROW EXECUTE PROCEDURE trg_comentario_insere();
 
+-- mesma checagem de data quando o comentário é alterado
 CREATE OR REPLACE FUNCTION trg_comentario_atualiza() RETURNS trigger AS $$
 DECLARE
     v_data_video Video.dataH%TYPE;
@@ -57,6 +60,7 @@ CREATE TRIGGER comentario_bu
 BEFORE UPDATE OF dataH, id_video ON Comentario
 FOR EACH ROW EXECUTE PROCEDURE trg_comentario_atualiza();
 
+-- numera as doações dentro do comentário
 CREATE OR REPLACE FUNCTION trg_doacao_seq() RETURNS trigger AS $$
 BEGIN
     IF NEW.seq_pg IS NULL THEN
@@ -78,6 +82,7 @@ CREATE TRIGGER doacao_seq_bi
 BEFORE INSERT ON Doacao
 FOR EACH ROW EXECUTE PROCEDURE trg_doacao_seq();
 
+-- sequencial das doações feitas pelo mecanismo da plataforma, também por comentário
 CREATE OR REPLACE FUNCTION trg_mecplat_seq() RETURNS trigger AS $$
 DECLARE
     v_doacao Doacao%ROWTYPE;
@@ -104,6 +109,7 @@ CREATE TRIGGER mecplat_seq_bi
 BEFORE INSERT ON MecanismoPlat
 FOR EACH ROW EXECUTE PROCEDURE trg_mecplat_seq();
 
+-- vídeo não pode ser anterior ao início do canal
 CREATE OR REPLACE FUNCTION trg_video_data() RETURNS trigger AS $$
 DECLARE
     v_inicio Canal.data_inicio%TYPE;
@@ -120,6 +126,7 @@ CREATE TRIGGER video_data_bi
 BEFORE INSERT OR UPDATE OF dataH, id_canal ON Video
 FOR EACH ROW EXECUTE PROCEDURE trg_video_data();
 
+-- mantém Canal.qtd_videos quando um vídeo entra, sai ou muda de canal
 CREATE OR REPLACE FUNCTION trg_video_insere() RETURNS trigger AS $$
 BEGIN
     UPDATE Canal SET qtd_videos = qtd_videos + 1 WHERE id_canal = NEW.id_canal;
@@ -153,6 +160,7 @@ FOR EACH ROW EXECUTE PROCEDURE trg_video_remove();
 CREATE TRIGGER video_qtd_au AFTER UPDATE OF id_canal ON Video
 FOR EACH ROW EXECUTE PROCEDURE trg_video_muda_canal();
 
+-- a doação só pode ter uma forma de pagamento
 CREATE OR REPLACE FUNCTION trg_doacao_subtipo() RETURNS trigger AS $$
 BEGIN
     PERFORM 1 FROM Doacao WHERE id_doacao = NEW.id_doacao FOR NO KEY UPDATE;
@@ -181,6 +189,7 @@ FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
 CREATE TRIGGER mecanismoplat_subtipo_bi BEFORE INSERT OR UPDATE OF id_doacao ON MecanismoPlat
 FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
 
+-- e precisa ter uma; checado só no commit porque a forma é inserida depois da doação
 CREATE OR REPLACE FUNCTION trg_doacao_total() RETURNS trigger AS $$
 BEGIN
     IF NOT (EXISTS (SELECT 1 FROM BitCoin WHERE id_doacao = NEW.id_doacao)
@@ -198,6 +207,7 @@ AFTER INSERT ON Doacao
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE PROCEDURE trg_doacao_total();
 
+-- o dono do canal não é cadastrado como participante
 CREATE OR REPLACE FUNCTION trg_participa_dono() RETURNS trigger AS $$
 DECLARE
     v_dono Canal.id_streamer%TYPE;
@@ -216,6 +226,7 @@ CREATE TRIGGER participa_dono_bi
 BEFORE INSERT OR UPDATE ON Participa
 FOR EACH ROW EXECUTE PROCEDURE trg_participa_dono();
 
+-- recalcula os atributos derivados, pra rodar de tempos em tempos
 CREATE OR REPLACE FUNCTION recalcular_derivados() RETURNS void AS $$
 BEGIN
     UPDATE Canal c

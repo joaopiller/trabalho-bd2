@@ -4,6 +4,7 @@ DROP MATERIALIZED VIEW IF EXISTS mv_interacoes_video;
 DROP MATERIALIZED VIEW IF EXISTS mv_resumo_canal;
 DROP VIEW IF EXISTS vw_streamer_plataforma, vw_patrocinio_empresa, vw_membro_usuario;
 
+-- resumo por canal: patrocínio, membros, comentários e doações já em dólar (consultas 3, 4 e 7 a 11)
 CREATE MATERIALIZED VIEW mv_resumo_canal AS
 SELECT c.id_canal,
        c.nome,
@@ -53,13 +54,17 @@ LEFT JOIN (
     GROUP BY v.id_canal
 ) d ON d.id_canal = c.id_canal;
 
+-- o REFRESH CONCURRENTLY exige um índice único; este também serve o filtro por canal
 CREATE UNIQUE INDEX uq_mv_resumo_canal ON mv_resumo_canal USING btree (id_canal);
 
+-- filtro por streamer é sempre igualdade, por isso hash
 CREATE INDEX idx_mv_resumo_streamer ON mv_resumo_canal USING hash (id_streamer);
 
+-- filtro por plataforma; o CLUSTER deixa os canais da mesma plataforma juntos
 CREATE INDEX idx_mv_resumo_plataforma ON mv_resumo_canal USING btree (nro_plataforma);
 CLUSTER mv_resumo_canal USING idx_mv_resumo_plataforma;
 
+-- comentários online, offline e total por vídeo (consulta 2)
 CREATE MATERIALIZED VIEW mv_interacoes_video AS
 SELECT v.id_video,
        v.id_canal,
@@ -75,11 +80,14 @@ JOIN Canal c ON c.id_canal = v.id_canal
 LEFT JOIN Comentario co ON co.id_video = v.id_video
 GROUP BY v.id_video, v.id_canal, c.nome, c.nro_plataforma, v.titulo, v.dataH;
 
+-- id_canal na frente pra servir o filtro por canal
 CREATE UNIQUE INDEX uq_mv_interacoes_video ON mv_interacoes_video USING btree (id_canal, id_video);
 
+-- já entrega os vídeos na ordem do ranking
 CREATE INDEX idx_mv_interacoes_total ON mv_interacoes_video USING btree (total_comentarios DESC);
 CLUSTER mv_interacoes_video USING idx_mv_interacoes_total;
 
+-- vídeos e visualizações de cada streamer por plataforma (consultas 1 e 12)
 CREATE VIEW vw_streamer_plataforma AS
 SELECT id_streamer,
        nro_plataforma,
@@ -89,6 +97,7 @@ SELECT id_streamer,
 FROM Canal
 GROUP BY id_streamer, nro_plataforma;
 
+-- patrocínios com os nomes da empresa e do canal (consulta 5)
 CREATE VIEW vw_patrocinio_empresa AS
 SELECT e.nro AS nro_empresa,
        e.nome AS empresa,
@@ -101,6 +110,7 @@ FROM Patrocinio p
 JOIN Empresa e ON e.nro = p.nro_empresa
 JOIN Canal c ON c.id_canal = p.id_canal;
 
+-- de quantos canais cada usuário é membro e quanto paga por mês (consulta 6)
 CREATE VIEW vw_membro_usuario AS
 SELECT u.id_usuario,
        u.nick,
@@ -111,6 +121,7 @@ JOIN NivelCanal n ON n.id_canal = i.id_canal AND n.nivel = i.nivel
 JOIN Usuario u ON u.id_usuario = i.id_membro
 GROUP BY u.id_usuario, u.nick;
 
+-- atualiza as duas materializadas; com TRUE refaz também o CLUSTER
 CREATE OR REPLACE FUNCTION atualizar_visoes(p_reorganizar BOOLEAN DEFAULT FALSE) RETURNS void AS $$
 BEGIN
     REFRESH MATERIALIZED VIEW CONCURRENTLY mv_resumo_canal;

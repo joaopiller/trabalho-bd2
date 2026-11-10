@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS MecanismoPlat, CartaoCredito, PayPal, BitCoin, Doacao,
                      StreamerPais, PlataformaUsuario, Usuario,
                      Plataforma, EmpresaPais, Empresa, Pais, Conversao CASCADE;
 
+-- moedas e países
 CREATE TABLE Conversao (
     moeda CHAR(3) PRIMARY KEY,
     nome VARCHAR(50) NOT NULL,
@@ -20,6 +21,7 @@ CREATE TABLE Pais (
     moeda CHAR(3) NOT NULL REFERENCES Conversao(moeda)
 );
 
+-- empresas e o identificador nacional delas em cada país
 CREATE TABLE Empresa (
     nro INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
@@ -34,6 +36,7 @@ CREATE TABLE EmpresaPais (
     CONSTRAINT uq_empresapais_idnacional UNIQUE (ddi_pais, id_nacional)
 );
 
+-- qtd_users é derivado, atualizado pelo recalcular_derivados()
 CREATE TABLE Plataforma (
     nro INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nome VARCHAR(100) NOT NULL UNIQUE,
@@ -44,6 +47,7 @@ CREATE TABLE Plataforma (
     CONSTRAINT ck_plataforma_qtd_users CHECK (qtd_users >= 0)
 );
 
+-- id_usuario é artificial, o nick continua único
 CREATE TABLE Usuario (
     id_usuario INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nick VARCHAR(50) NOT NULL UNIQUE,
@@ -54,6 +58,7 @@ CREATE TABLE Usuario (
     pais_residencia INTEGER NOT NULL REFERENCES Pais(DDI)
 );
 
+-- número do usuário em cada plataforma
 CREATE TABLE PlataformaUsuario (
     nro_plataforma INTEGER NOT NULL REFERENCES Plataforma(nro),
     id_usuario INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
@@ -62,6 +67,7 @@ CREATE TABLE PlataformaUsuario (
     CONSTRAINT uq_platusuario_nro UNIQUE (nro_plataforma, nro_usuario)
 );
 
+-- passaportes dos streamers
 CREATE TABLE StreamerPais (
     id_streamer INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
     ddi_pais INTEGER NOT NULL REFERENCES Pais(DDI),
@@ -70,6 +76,7 @@ CREATE TABLE StreamerPais (
     CONSTRAINT uq_streamer_passaporte UNIQUE (ddi_pais, nro_passaporte)
 );
 
+-- o canal é identificado por (plataforma, nome); o id_canal evita levar essa chave pras outras tabelas
 CREATE TABLE Canal (
     id_canal INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
@@ -86,6 +93,7 @@ CREATE TABLE Canal (
     CONSTRAINT ck_canal_qtd_vis CHECK (qtd_visualizacoes >= 0)
 ) WITH (fillfactor = 70);
 
+-- só patrocínios vigentes, valor em dólar
 CREATE TABLE Patrocinio (
     nro_empresa INTEGER NOT NULL REFERENCES Empresa(nro) ON DELETE CASCADE,
     id_canal INTEGER NOT NULL REFERENCES Canal(id_canal) ON DELETE CASCADE,
@@ -94,6 +102,7 @@ CREATE TABLE Patrocinio (
     CONSTRAINT ck_patrocinio_valor CHECK (valor > 0)
 );
 
+-- os níveis de membro de cada canal
 CREATE TABLE NivelCanal (
     id_canal INTEGER NOT NULL REFERENCES Canal(id_canal) ON DELETE CASCADE,
     nivel SMALLINT NOT NULL,
@@ -107,6 +116,7 @@ CREATE TABLE NivelCanal (
     CONSTRAINT ck_nivel_gif CHECK (gif ILIKE '%.gif')
 );
 
+-- membro vem primeiro na chave por causa da consulta 6, que filtra por usuário
 CREATE TABLE Inscricao (
     id_canal INTEGER NOT NULL,
     id_membro INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
@@ -116,6 +126,7 @@ CREATE TABLE Inscricao (
         REFERENCES NivelCanal(id_canal, nivel) ON DELETE CASCADE
 );
 
+-- id_video no lugar da chave (canal, data, título)
 CREATE TABLE Video (
     id_video INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_canal INTEGER NOT NULL REFERENCES Canal(id_canal) ON DELETE CASCADE,
@@ -130,12 +141,14 @@ CREATE TABLE Video (
     CONSTRAINT ck_video_visu CHECK (visu_simul >= 0 AND visu_total >= 0 AND visu_simul <= visu_total)
 ) WITH (fillfactor = 80);
 
+-- streamers convidados no vídeo, o dono do canal não entra aqui
 CREATE TABLE Participa (
     id_video INTEGER NOT NULL REFERENCES Video(id_video) ON DELETE CASCADE,
     id_streamer INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
     PRIMARY KEY (id_video, id_streamer)
 );
 
+-- seq conta por vídeo e usuário
 CREATE TABLE Comentario (
     id_video INTEGER NOT NULL REFERENCES Video(id_video) ON DELETE CASCADE,
     id_usuario INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE RESTRICT,
@@ -147,6 +160,7 @@ CREATE TABLE Comentario (
     CONSTRAINT ck_comentario_seq CHECK (seq > 0)
 );
 
+-- a doação pertence a um comentário; valor na moeda do país do doador
 CREATE TABLE Doacao (
     id_doacao INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_video INTEGER NOT NULL,
@@ -163,6 +177,7 @@ CREATE TABLE Doacao (
     CONSTRAINT ck_doacao_status CHECK (status IN ('recusado', 'recebido', 'lido'))
 );
 
+-- formas de pagamento: cada doação fica em exatamente uma destas quatro tabelas
 CREATE TABLE BitCoin (
     id_doacao INTEGER PRIMARY KEY REFERENCES Doacao(id_doacao) ON DELETE CASCADE,
     TxID VARCHAR(128) NOT NULL UNIQUE
