@@ -6,6 +6,7 @@ DROP TRIGGER IF EXISTS comentario_bu ON Comentario;
 DROP TRIGGER IF EXISTS doacao_seq_bi ON Doacao;
 DROP TRIGGER IF EXISTS doacao_total_ai ON Doacao;
 DROP TRIGGER IF EXISTS mecplat_seq_bi ON MecanismoPlat;
+DROP TRIGGER IF EXISTS video_data_bi ON Video;
 DROP TRIGGER IF EXISTS video_qtd_ai ON Video;
 DROP TRIGGER IF EXISTS video_qtd_ad ON Video;
 DROP TRIGGER IF EXISTS video_qtd_au ON Video;
@@ -102,6 +103,22 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER mecplat_seq_bi
 BEFORE INSERT ON MecanismoPlat
 FOR EACH ROW EXECUTE PROCEDURE trg_mecplat_seq();
+
+CREATE OR REPLACE FUNCTION trg_video_data() RETURNS trigger AS $$
+DECLARE
+    v_inicio Canal.data_inicio%TYPE;
+BEGIN
+    SELECT data_inicio INTO v_inicio FROM Canal WHERE id_canal = NEW.id_canal;
+    IF NEW.dataH < v_inicio THEN
+        RAISE EXCEPTION 'Vídeo (%) anterior ao início do canal % (%)', NEW.dataH, NEW.id_canal, v_inicio;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER video_data_bi
+BEFORE INSERT OR UPDATE OF dataH, id_canal ON Video
+FOR EACH ROW EXECUTE PROCEDURE trg_video_data();
 
 CREATE OR REPLACE FUNCTION trg_video_insere() RETURNS trigger AS $$
 BEGIN
