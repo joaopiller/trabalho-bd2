@@ -183,8 +183,7 @@ CREATE TABLE CartaoCredito (
     id_doacao INTEGER PRIMARY KEY REFERENCES Doacao(id_doacao) ON DELETE CASCADE,
     nro VARCHAR(25) NOT NULL,
     bandeira VARCHAR(30) NOT NULL,
-    dataH TIMESTAMP NOT NULL,
-    CONSTRAINT ck_cartao_nro CHECK (nro ~ '^[0-9]{12,19}$')
+    dataH TIMESTAMP NOT NULL
 );
 
 CREATE TABLE MecanismoPlat (
