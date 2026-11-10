@@ -1,9 +1,6 @@
 \set ON_ERROR_STOP on
 SET client_encoding = 'UTF8';
 
--- Os filtros opcionais usam as chaves do modelo: nro da plataforma, nro da empresa,
--- nick do usuário/streamer e nome do canal. Como o canal é identificado por (nome, plataforma),
--- a plataforma só precisa ser informada quando o mesmo nome existe em mais de uma.
 CREATE OR REPLACE FUNCTION id_do_canal(p_canal VARCHAR, p_plataforma INTEGER) RETURNS INTEGER AS $$
 DECLARE
     v_id Canal.id_canal%TYPE;
@@ -24,7 +21,6 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 1
 CREATE OR REPLACE FUNCTION streamers_mais_videos(p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (streamer VARCHAR, qtd_videos BIGINT, visualizacoes NUMERIC) AS $$
 BEGIN
@@ -49,7 +45,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 2
 CREATE OR REPLACE FUNCTION videos_mais_comentados(p_canal VARCHAR DEFAULT NULL, p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, titulo VARCHAR, postado_em TIMESTAMP,
                coment_online BIGINT, coment_offline BIGINT, total_comentarios BIGINT) AS $$
@@ -74,7 +69,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 3
 CREATE OR REPLACE FUNCTION canais_por_interacoes(p_streamer VARCHAR DEFAULT NULL)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, interacoes BIGINT,
                qtd_videos INTEGER, media_por_video NUMERIC) AS $$
@@ -96,7 +90,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 4: a média é o total recebido dividido pelos comentários que trouxeram doação
 CREATE OR REPLACE FUNCTION canais_por_media_doacao(p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, media_por_comentario NUMERIC,
                qtd_doacoes BIGINT, total_usd NUMERIC) AS $$
@@ -119,7 +112,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 5
 CREATE OR REPLACE FUNCTION patrocinios_por_empresa(p_empresa INTEGER DEFAULT NULL)
 RETURNS TABLE (nro_empresa INTEGER, empresa VARCHAR, canal VARCHAR,
                nro_plataforma INTEGER, valor_usd NUMERIC) AS $$
@@ -139,7 +131,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 6
 CREATE OR REPLACE FUNCTION gasto_dos_membros(p_usuario VARCHAR DEFAULT NULL)
 RETURNS TABLE (usuario VARCHAR, qtd_canais BIGINT, total_mensal_usd NUMERIC) AS $$
 BEGIN
@@ -157,7 +148,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 7
 CREATE OR REPLACE FUNCTION canais_com_doacao(p_canal VARCHAR DEFAULT NULL, p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, total_usd NUMERIC) AS $$
 DECLARE
@@ -179,7 +169,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 8
 CREATE OR REPLACE FUNCTION top_canais_patrocinio(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, patrocinio_usd NUMERIC) AS $$
 BEGIN
@@ -192,7 +181,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 9
 CREATE OR REPLACE FUNCTION top_canais_membros(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, qtd_membros BIGINT, membros_usd_mes NUMERIC) AS $$
 BEGIN
@@ -205,7 +193,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 10
 CREATE OR REPLACE FUNCTION top_canais_doacoes(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, qtd_doacoes BIGINT, doacoes_usd NUMERIC) AS $$
 BEGIN
@@ -218,7 +205,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 11
 CREATE OR REPLACE FUNCTION top_canais_faturamento(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, patrocinio_usd NUMERIC,
                membros_usd_mes NUMERIC, doacoes_usd NUMERIC, receita_usd NUMERIC) AS $$
@@ -232,7 +218,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- consulta 12: streamers são os donos de canal na plataforma
 CREATE OR REPLACE FUNCTION top_plataformas(p_k INTEGER, p_plataforma INTEGER DEFAULT NULL)
 RETURNS TABLE (plataforma VARCHAR, qtd_streamers BIGINT, qtd_canais BIGINT) AS $$
 BEGIN

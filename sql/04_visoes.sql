@@ -4,7 +4,6 @@ DROP MATERIALIZED VIEW IF EXISTS mv_interacoes_video;
 DROP MATERIALIZED VIEW IF EXISTS mv_resumo_canal;
 DROP VIEW IF EXISTS vw_streamer_plataforma, vw_patrocinio_empresa, vw_membro_usuario;
 
--- receita em USD e interações por canal (consultas 3, 4 e 7 a 11)
 CREATE MATERIALIZED VIEW mv_resumo_canal AS
 SELECT c.id_canal,
        c.nome,
@@ -54,21 +53,13 @@ LEFT JOIN (
     GROUP BY v.id_canal
 ) d ON d.id_canal = c.id_canal;
 
--- os cinco índices de apoio ficam nas materializadas: só são mantidos no REFRESH,
--- então não pesam nos INSERTs das tabelas base
-
--- exigido pelo REFRESH CONCURRENTLY; também atende o filtro por canal
 CREATE UNIQUE INDEX uq_mv_resumo_canal ON mv_resumo_canal USING btree (id_canal);
 
--- filtro por streamer é só igualdade e a chave quase não repete
 CREATE INDEX idx_mv_resumo_streamer ON mv_resumo_canal USING hash (id_streamer);
 
--- filtro por plataforma: chave muito repetida, e o B+ permite o CLUSTER
 CREATE INDEX idx_mv_resumo_plataforma ON mv_resumo_canal USING btree (nro_plataforma);
 CLUSTER mv_resumo_canal USING idx_mv_resumo_plataforma;
 
--- comentários por vídeo (consulta 2); nome e plataforma do canal já vêm juntos
--- para a listagem não precisar de junção
 CREATE MATERIALIZED VIEW mv_interacoes_video AS
 SELECT v.id_video,
        v.id_canal,
@@ -84,15 +75,11 @@ JOIN Canal c ON c.id_canal = v.id_canal
 LEFT JOIN Comentario co ON co.id_video = v.id_video
 GROUP BY v.id_video, v.id_canal, c.nome, c.nro_plataforma, v.titulo, v.dataH;
 
--- id_canal na frente para servir também ao filtro por canal
 CREATE UNIQUE INDEX uq_mv_interacoes_video ON mv_interacoes_video USING btree (id_canal, id_video);
 
--- a listagem ordenada por total sai do índice, sem Sort, lendo as páginas em sequência
 CREATE INDEX idx_mv_interacoes_total ON mv_interacoes_video USING btree (total_comentarios DESC);
 CLUSTER mv_interacoes_video USING idx_mv_interacoes_total;
 
--- canais, vídeos e visualizações por streamer e plataforma (consultas 1 e 12).
--- só lê Canal: nick e nome da plataforma são buscados depois de agregar, por quem consulta
 CREATE VIEW vw_streamer_plataforma AS
 SELECT id_streamer,
        nro_plataforma,
@@ -102,7 +89,6 @@ SELECT id_streamer,
 FROM Canal
 GROUP BY id_streamer, nro_plataforma;
 
--- patrocínios vigentes por empresa (consulta 5)
 CREATE VIEW vw_patrocinio_empresa AS
 SELECT e.nro AS nro_empresa,
        e.nome AS empresa,
@@ -115,7 +101,6 @@ FROM Patrocinio p
 JOIN Empresa e ON e.nro = p.nro_empresa
 JOIN Canal c ON c.id_canal = p.id_canal;
 
--- canais e gasto mensal por usuário (consulta 6)
 CREATE VIEW vw_membro_usuario AS
 SELECT u.id_usuario,
        u.nick,
@@ -126,8 +111,6 @@ JOIN NivelCanal n ON n.id_canal = i.id_canal AND n.nivel = i.nivel
 JOIN Usuario u ON u.id_usuario = i.id_membro
 GROUP BY u.id_usuario, u.nick;
 
--- agendar junto com recalcular_derivados(). O REFRESH CONCURRENTLY não bloqueia leitura,
--- mas vai desfazendo a ordem física; p_reorganizar refaz o CLUSTER (bloqueia a visão)
 CREATE OR REPLACE FUNCTION atualizar_visoes(p_reorganizar BOOLEAN DEFAULT FALSE) RETURNS void AS $$
 BEGIN
     REFRESH MATERIALIZED VIEW CONCURRENTLY mv_resumo_canal;

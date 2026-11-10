@@ -44,7 +44,6 @@ CREATE TABLE Plataforma (
     CONSTRAINT ck_plataforma_qtd_users CHECK (qtd_users >= 0)
 );
 
--- nick é a chave do modelo; id_usuario é o identificador artificial usado nas FKs
 CREATE TABLE Usuario (
     id_usuario INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nick VARCHAR(50) NOT NULL UNIQUE,
@@ -71,8 +70,6 @@ CREATE TABLE StreamerPais (
     CONSTRAINT uq_streamer_passaporte UNIQUE (ddi_pais, nro_passaporte)
 );
 
--- plataforma na frente do UNIQUE: o mesmo índice atende o filtro por plataforma
--- fillfactor deixa folga na página para o UPDATE de qtd_videos não mexer nos índices
 CREATE TABLE Canal (
     id_canal INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
@@ -89,7 +86,6 @@ CREATE TABLE Canal (
     CONSTRAINT ck_canal_qtd_vis CHECK (qtd_visualizacoes >= 0)
 ) WITH (fillfactor = 70);
 
--- empresa na frente da PK por causa do filtro da consulta 5
 CREATE TABLE Patrocinio (
     nro_empresa INTEGER NOT NULL REFERENCES Empresa(nro) ON DELETE CASCADE,
     id_canal INTEGER NOT NULL REFERENCES Canal(id_canal) ON DELETE CASCADE,
@@ -111,7 +107,6 @@ CREATE TABLE NivelCanal (
     CONSTRAINT ck_nivel_gif CHECK (gif ILIKE '%.gif')
 );
 
--- membro na frente da PK por causa do filtro da consulta 6
 CREATE TABLE Inscricao (
     id_canal INTEGER NOT NULL,
     id_membro INTEGER NOT NULL REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
@@ -152,7 +147,6 @@ CREATE TABLE Comentario (
     CONSTRAINT ck_comentario_seq CHECK (seq > 0)
 );
 
--- id_doacao substitui a chave de 4 colunas nas tabelas de forma de pagamento
 CREATE TABLE Doacao (
     id_doacao INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_video INTEGER NOT NULL,

@@ -15,7 +15,6 @@ DROP TRIGGER IF EXISTS cartaocredito_subtipo_bi ON CartaoCredito;
 DROP TRIGGER IF EXISTS mecanismoplat_subtipo_bi ON MecanismoPlat;
 DROP TRIGGER IF EXISTS participa_dono_bi ON Participa;
 
--- Comentario.seq: sequencial por (vídeo, usuário)
 CREATE OR REPLACE FUNCTION trg_comentario_insere() RETURNS trigger AS $$
 DECLARE
     v_data_video Video.dataH%TYPE;
@@ -28,7 +27,6 @@ BEGIN
         RAISE EXCEPTION 'Comentário (%) anterior ao vídeo % (%)', NEW.dataH, NEW.id_video, v_data_video;
     END IF;
     IF NEW.seq IS NULL THEN
-        -- trava a linha do usuário: dois comentários simultâneos dele não leem o mesmo MAX
         PERFORM 1 FROM Usuario WHERE id_usuario = NEW.id_usuario FOR NO KEY UPDATE;
         SELECT COALESCE(MAX(seq), 0) + 1 INTO NEW.seq
           FROM Comentario
@@ -58,7 +56,6 @@ CREATE TRIGGER comentario_bu
 BEFORE UPDATE OF dataH, id_video ON Comentario
 FOR EACH ROW EXECUTE PROCEDURE trg_comentario_atualiza();
 
--- Doacao.seq_pg: sequencial por comentário
 CREATE OR REPLACE FUNCTION trg_doacao_seq() RETURNS trigger AS $$
 BEGIN
     IF NEW.seq_pg IS NULL THEN
@@ -80,8 +77,6 @@ CREATE TRIGGER doacao_seq_bi
 BEFORE INSERT ON Doacao
 FOR EACH ROW EXECUTE PROCEDURE trg_doacao_seq();
 
--- MecanismoPlat.seq_plataforma: sequencial entre as doações do mesmo comentário feitas pela plataforma
--- (usuário e plataforma já são determinados pelo comentário)
 CREATE OR REPLACE FUNCTION trg_mecplat_seq() RETURNS trigger AS $$
 DECLARE
     v_doacao Doacao%ROWTYPE;
@@ -108,7 +103,6 @@ CREATE TRIGGER mecplat_seq_bi
 BEFORE INSERT ON MecanismoPlat
 FOR EACH ROW EXECUTE PROCEDURE trg_mecplat_seq();
 
--- Canal.qtd_videos acompanha INSERT, DELETE e troca de canal do vídeo
 CREATE OR REPLACE FUNCTION trg_video_insere() RETURNS trigger AS $$
 BEGIN
     UPDATE Canal SET qtd_videos = qtd_videos + 1 WHERE id_canal = NEW.id_canal;
@@ -142,10 +136,8 @@ FOR EACH ROW EXECUTE PROCEDURE trg_video_remove();
 CREATE TRIGGER video_qtd_au AFTER UPDATE OF id_canal ON Video
 FOR EACH ROW EXECUTE PROCEDURE trg_video_muda_canal();
 
--- especialização disjunta: a doação só pode estar em uma das quatro tabelas
 CREATE OR REPLACE FUNCTION trg_doacao_subtipo() RETURNS trigger AS $$
 BEGIN
-    -- trava a doação para duas transações não gravarem formas diferentes ao mesmo tempo
     PERFORM 1 FROM Doacao WHERE id_doacao = NEW.id_doacao FOR NO KEY UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Doação % não existe', NEW.id_doacao;
@@ -172,7 +164,6 @@ FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
 CREATE TRIGGER mecanismoplat_subtipo_bi BEFORE INSERT OR UPDATE OF id_doacao ON MecanismoPlat
 FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
 
--- especialização total: conferida no COMMIT, porque a forma de pagamento é inserida depois da doação
 CREATE OR REPLACE FUNCTION trg_doacao_total() RETURNS trigger AS $$
 BEGIN
     IF NOT (EXISTS (SELECT 1 FROM BitCoin WHERE id_doacao = NEW.id_doacao)
@@ -190,7 +181,6 @@ AFTER INSERT ON Doacao
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE PROCEDURE trg_doacao_total();
 
--- o dono do canal já participa do vídeo; gravá-lo em Participa seria redundância
 CREATE OR REPLACE FUNCTION trg_participa_dono() RETURNS trigger AS $$
 DECLARE
     v_dono Canal.id_streamer%TYPE;
@@ -209,7 +199,6 @@ CREATE TRIGGER participa_dono_bi
 BEFORE INSERT OR UPDATE ON Participa
 FOR EACH ROW EXECUTE PROCEDURE trg_participa_dono();
 
--- recálculo periódico de qtd_users e qtd_visualizacoes (agendar)
 CREATE OR REPLACE FUNCTION recalcular_derivados() RETURNS void AS $$
 BEGIN
     UPDATE Canal c

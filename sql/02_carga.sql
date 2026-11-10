@@ -3,7 +3,6 @@ SET client_encoding = 'UTF8';
 
 BEGIN;
 
--- semente fixa: os dados são sorteados, mas a carga sai igual em toda execução
 SELECT setseed(0.2026);
 
 INSERT INTO Conversao (moeda, nome, fator_conver) VALUES
@@ -35,7 +34,6 @@ LEFT JOIN (VALUES
     (82, 'Coreia do Sul', 'KRW'), (86, 'China', 'CNY'), (91, 'Índia', 'INR'), (351, 'Portugal', 'EUR')
 ) AS r(ddi, nome, moeda) ON r.ddi = g.ddi;
 
--- a maior parte do público vem de poucos países
 CREATE FUNCTION pg_temp.pais_aleatorio() RETURNS integer AS $$
     SELECT CASE WHEN random() < 0.7
                 THEN (ARRAY[55, 55, 55, 1, 1, 44, 49, 33, 34, 81, 82, 351, 52, 54, 91, 7])[1 + floor(random() * 16)::int]
@@ -55,7 +53,6 @@ FROM (
     FROM generate_series(1, 3000 + floor(random() * 400)::int)
 ) AS s;
 
--- toda empresa tem sede em um país; algumas em mais de um
 INSERT INTO EmpresaPais (nro_empresa, ddi_pais, id_nacional)
 SELECT e.nro, pg_temp.pais_aleatorio(), lpad(floor(random() * 1e14)::bigint::text, 14, '0')
 FROM (SELECT nro, 1 + (random() < 0.18)::int + (random() < 0.05)::int AS qtd FROM Empresa) AS e,
@@ -125,7 +122,6 @@ SELECT row_number() OVER (ORDER BY random()) AS n, id_usuario, pais_residencia
 FROM Usuario
 WHERE random() < 0.17;
 
--- passaporte do país onde mora; alguns têm um segundo
 INSERT INTO StreamerPais (id_streamer, ddi_pais, nro_passaporte)
 SELECT id_usuario,
        CASE WHEN k = 1 THEN pais_residencia ELSE pg_temp.pais_aleatorio() END,
@@ -135,7 +131,6 @@ FROM (SELECT *, 1 + (random() < 0.12)::int AS qtd FROM tmp_streamer) AS s,
      generate_series(1, s.qtd) AS k
 ON CONFLICT DO NOTHING;
 
--- 1 a 3 canais por streamer, concentrados nas plataformas de nro mais baixo
 INSERT INTO Canal (nome, nro_plataforma, id_streamer, tipo, data_inicio, descricao)
 SELECT c.nome, c.nro_plataforma, c.id_streamer,
        CASE WHEN c.r < 0.7 THEN 'público' WHEN c.r < 0.9 THEN 'misto' ELSE 'privado' END,
@@ -166,7 +161,6 @@ SELECT c.id_canal, n,
        'emotes/canal' || c.id_canal || '_nivel' || n || '.gif'
 FROM (SELECT id_canal, 1.5 + random() * 4 AS base FROM Canal) AS c, generate_series(1, 5) AS n;
 
--- streamer tem conta onde tem canal; os demais usuários, em uma plataforma
 INSERT INTO PlataformaUsuario (nro_plataforma, id_usuario, nro_usuario)
 SELECT nro_plataforma, id_usuario, 10000000 + floor(random() * 9e9)::bigint
 FROM (
@@ -186,7 +180,6 @@ FROM generate_series(1, 3400 + floor(random() * 300)::int),
      (SELECT count(*) AS ne FROM Empresa) AS e, (SELECT count(*) AS nc FROM Canal) AS c
 ON CONFLICT DO NOTHING;
 
--- o dono não é membro do próprio canal; níveis baratos são mais comuns
 INSERT INTO Inscricao (id_canal, id_membro, nivel)
 SELECT s.id_canal, s.id_membro, 1 + floor(5 * power(random(), 2.5))::int
 FROM (
@@ -237,8 +230,6 @@ JOIN Video v ON v.id_video = s.id_video
 JOIN Canal c ON c.id_canal = v.id_canal AND c.id_streamer <> t.id_usuario
 ON CONFLICT DO NOTHING;
 
--- cada par (vídeo, usuário) sorteado rende de 1 a 4 comentários;
--- o online cai durante a transmissão e o offline, até 120 dias depois
 CREATE TEMP TABLE tmp_coment ON COMMIT DROP AS
 SELECT id_video, id_usuario, coment_on, dataH,
        row_number() OVER (PARTITION BY id_video, id_usuario ORDER BY dataH) AS seq
@@ -270,8 +261,6 @@ SELECT id_video, id_usuario, seq,
        dataH, coment_on
 FROM tmp_coment;
 
--- quase metade dos comentários traz doação e poucos trazem duas;
--- o valor é sorteado em dólar e gravado na moeda do país do doador
 CREATE TEMP TABLE tmp_doacao ON COMMIT DROP AS
 SELECT t.id_video, t.id_usuario, t.seq AS seq_comentario, k AS seq_pg, t.dataH,
        round((power(10, random() * 2.5) / cv.fator_conver)::numeric, 2) AS valor,
@@ -330,7 +319,6 @@ WHERE s.nro_plataforma = p.nro;
 
 COMMIT;
 
--- os dois UPDATEs acima deixaram uma versão morta de cada tupla
 VACUUM FULL Canal, Plataforma;
 ANALYZE;
 
