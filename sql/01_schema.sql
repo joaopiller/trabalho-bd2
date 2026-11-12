@@ -76,7 +76,7 @@ CREATE TABLE StreamerPais (
     CONSTRAINT uq_streamer_passaporte UNIQUE (ddi_pais, nro_passaporte)
 );
 
--- o canal é identificado por (plataforma, nome); o id_canal evita levar essa chave pras outras tabelas
+-- o canal é identificado por (nome, plataforma); o id_canal evita levar essa chave pras outras tabelas
 CREATE TABLE Canal (
     id_canal INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
@@ -87,7 +87,7 @@ CREATE TABLE Canal (
     descricao TEXT,
     qtd_videos INTEGER NOT NULL DEFAULT 0,
     qtd_visualizacoes BIGINT NOT NULL DEFAULT 0,
-    CONSTRAINT uq_canal_nome_plataforma UNIQUE (nro_plataforma, nome),
+    CONSTRAINT uq_canal_nome_plataforma UNIQUE (nome, nro_plataforma),
     CONSTRAINT ck_canal_tipo CHECK (tipo IN ('privado', 'público', 'misto')),
     CONSTRAINT ck_canal_qtd_vid CHECK (qtd_videos >= 0),
     CONSTRAINT ck_canal_qtd_vis CHECK (qtd_visualizacoes >= 0)
@@ -201,7 +201,7 @@ CREATE TABLE MecanismoPlat (
     CONSTRAINT ck_mecplat_seq CHECK (seq_plataforma > 0)
 );
 
-COMMENT ON COLUMN Plataforma.qtd_users IS 'Derivado: COUNT(PlataformaUsuario). Recalculo periodico.';
+COMMENT ON COLUMN Plataforma.qtd_users IS 'Derivado: COUNT(PlataformaUsuario). Recálculo periódico.';
 COMMENT ON COLUMN Canal.qtd_videos IS 'Derivado: COUNT(Video). Mantido por trigger.';
-COMMENT ON COLUMN Canal.qtd_visualizacoes IS 'Derivado: SUM(Video.visu_total). Recalculo periodico.';
-COMMENT ON COLUMN Doacao.valor IS 'Na moeda do pais de residencia do doador; converter via Conversao.fator_conver.';
+COMMENT ON COLUMN Canal.qtd_visualizacoes IS 'Derivado: SUM(Video.visu_total). Recálculo periódico.';
+COMMENT ON COLUMN Doacao.valor IS 'Na moeda do país de residência do doador; converter via Conversao.fator_conver.';

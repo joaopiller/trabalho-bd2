@@ -1,27 +1,28 @@
 \set ON_ERROR_STOP on
+SET client_encoding = 'UTF8';
 
+DROP VIEW IF EXISTS vw_streamer_plataforma, vw_patrocinio_empresa, vw_membro_usuario;
 DROP MATERIALIZED VIEW IF EXISTS mv_interacoes_video;
 DROP MATERIALIZED VIEW IF EXISTS mv_resumo_canal;
-DROP VIEW IF EXISTS vw_streamer_plataforma, vw_patrocinio_empresa, vw_membro_usuario;
 
--- resumo por canal: patrocínio, membros, comentários e doações já em dólar (consultas 3, 4 e 7 a 11)
+-- resumo por canal com o que é caro de calcular na hora (consultas 1, 3, 4 e 7 a 12)
 CREATE MATERIALIZED VIEW mv_resumo_canal AS
 SELECT c.id_canal,
-       c.nome,
        c.nro_plataforma,
        c.id_streamer,
        c.qtd_videos,
+       c.qtd_visualizacoes,
+       COALESCE(i.qtd, 0) AS interacoes,
+       COALESCE(m.qtd, 0)::INTEGER AS qtd_membros,
+       COALESCE(d.qtd, 0)::INTEGER AS qtd_doacoes,
+       COALESCE(d.qtd_coment, 0)::INTEGER AS coment_com_doacao,
+       s.nick AS streamer,
+       c.nome,
        COALESCE(p.total_usd, 0) AS patrocinio_usd,
-       COALESCE(m.qtd, 0) AS qtd_membros,
        COALESCE(m.total_usd, 0) AS membros_usd_mes,
-       COALESCE(i.qtd_on, 0) AS coment_online,
-       COALESCE(i.qtd_off, 0) AS coment_offline,
-       COALESCE(i.qtd_on, 0) + COALESCE(i.qtd_off, 0) AS interacoes,
-       COALESCE(d.qtd, 0) AS qtd_doacoes,
-       COALESCE(d.qtd_coment, 0) AS coment_com_doacao,
-       COALESCE(d.total_usd, 0) AS doacoes_usd,
-       COALESCE(p.total_usd, 0) + COALESCE(m.total_usd, 0) + COALESCE(d.total_usd, 0) AS receita_usd
+       COALESCE(d.total_usd, 0) AS doacoes_usd
 FROM Canal c
+JOIN Usuario s ON s.id_usuario = c.id_streamer
 LEFT JOIN (
     SELECT id_canal, SUM(valor) AS total_usd
     FROM Patrocinio
@@ -34,9 +35,7 @@ LEFT JOIN (
     GROUP BY i.id_canal
 ) m ON m.id_canal = c.id_canal
 LEFT JOIN (
-    SELECT v.id_canal,
-           SUM(CASE WHEN co.coment_on THEN 1 ELSE 0 END) AS qtd_on,
-           SUM(CASE WHEN co.coment_on THEN 0 ELSE 1 END) AS qtd_off
+    SELECT v.id_canal, COUNT(*) AS qtd
     FROM Comentario co
     JOIN Video v ON v.id_video = co.id_video
     GROUP BY v.id_canal
@@ -54,48 +53,50 @@ LEFT JOIN (
     GROUP BY v.id_canal
 ) d ON d.id_canal = c.id_canal;
 
--- o REFRESH CONCURRENTLY exige um índice único; este também serve o filtro por canal
-CREATE UNIQUE INDEX uq_mv_resumo_canal ON mv_resumo_canal USING btree (id_canal);
+-- único por causa do REFRESH CONCURRENTLY; a plataforma na frente atende o filtro por plataforma
+CREATE UNIQUE INDEX uq_mv_resumo_canal ON mv_resumo_canal USING btree (nro_plataforma, id_canal);
+-- deixa os canais da mesma plataforma juntos no disco
+CLUSTER mv_resumo_canal USING uq_mv_resumo_canal;
 
 -- filtro por streamer é sempre igualdade, por isso hash
 CREATE INDEX idx_mv_resumo_streamer ON mv_resumo_canal USING hash (id_streamer);
 
--- filtro por plataforma; o CLUSTER deixa os canais da mesma plataforma juntos
-CREATE INDEX idx_mv_resumo_plataforma ON mv_resumo_canal USING btree (nro_plataforma);
-CLUSTER mv_resumo_canal USING idx_mv_resumo_plataforma;
+-- já entrega os canais na ordem do que recebem de membros (consulta 9)
+CREATE INDEX idx_mv_resumo_membros ON mv_resumo_canal USING btree (membros_usd_mes DESC, id_canal);
 
--- comentários online, offline e total por vídeo (consulta 2)
+-- a receita é a soma das três fontes, indexada sem precisar guardar a coluna (consulta 11)
+CREATE INDEX idx_mv_resumo_receita ON mv_resumo_canal USING btree ((patrocinio_usd + membros_usd_mes + doacoes_usd) DESC, id_canal);
+
+-- comentários online e offline por vídeo; o total é a soma dos dois (consulta 2)
 CREATE MATERIALIZED VIEW mv_interacoes_video AS
 SELECT v.id_video,
        v.id_canal,
-       c.nome AS canal,
        c.nro_plataforma,
-       v.titulo,
+       COALESCE(SUM(CASE WHEN co.coment_on THEN 1 ELSE 0 END), 0)::INTEGER AS coment_online,
+       COALESCE(SUM(CASE WHEN NOT co.coment_on THEN 1 ELSE 0 END), 0)::INTEGER AS coment_offline,
        v.dataH,
-       SUM(CASE WHEN co.coment_on THEN 1 ELSE 0 END) AS coment_online,
-       SUM(CASE WHEN NOT co.coment_on THEN 1 ELSE 0 END) AS coment_offline,
-       COUNT(co.seq) AS total_comentarios
+       c.nome AS canal,
+       v.titulo
 FROM Video v
 JOIN Canal c ON c.id_canal = v.id_canal
 LEFT JOIN Comentario co ON co.id_video = v.id_video
 GROUP BY v.id_video, v.id_canal, c.nome, c.nro_plataforma, v.titulo, v.dataH;
 
--- id_canal na frente pra servir o filtro por canal
+-- único por causa do REFRESH CONCURRENTLY; o canal na frente atende o filtro por canal
 CREATE UNIQUE INDEX uq_mv_interacoes_video ON mv_interacoes_video USING btree (id_canal, id_video);
+-- deixa os vídeos do mesmo canal juntos no disco
+CLUSTER mv_interacoes_video USING uq_mv_interacoes_video;
 
--- já entrega os vídeos na ordem do ranking
-CREATE INDEX idx_mv_interacoes_total ON mv_interacoes_video USING btree (total_comentarios DESC);
-CLUSTER mv_interacoes_video USING idx_mv_interacoes_total;
-
--- vídeos e visualizações de cada streamer por plataforma (consultas 1 e 12)
+-- vídeos e visualizações de cada streamer por plataforma, a partir do resumo por canal (consultas 1 e 12)
 CREATE VIEW vw_streamer_plataforma AS
 SELECT id_streamer,
+       streamer,
        nro_plataforma,
        COUNT(*) AS qtd_canais,
        SUM(qtd_videos) AS qtd_videos,
        SUM(qtd_visualizacoes) AS qtd_visualizacoes
-FROM Canal
-GROUP BY id_streamer, nro_plataforma;
+FROM mv_resumo_canal
+GROUP BY id_streamer, streamer, nro_plataforma;
 
 -- patrocínios com os nomes da empresa e do canal (consulta 5)
 CREATE VIEW vw_patrocinio_empresa AS

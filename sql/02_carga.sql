@@ -3,8 +3,10 @@ SET client_encoding = 'UTF8';
 
 BEGIN;
 
+-- semente fixa pra carga sair igual toda vez
 SELECT setseed(0.2026);
 
+-- moedas reais primeiro, o resto é sorteado
 INSERT INTO Conversao (moeda, nome, fator_conver) VALUES
     ('USD', 'Dólar americano', 1), ('BRL', 'Real', 0.18), ('EUR', 'Euro', 1.08),
     ('GBP', 'Libra esterlina', 1.27), ('JPY', 'Iene', 0.0067), ('KRW', 'Won', 0.00073),
@@ -50,7 +52,7 @@ FROM (
            || ' ' ||
            (ARRAY['Games', 'Energy', 'Hardware', 'Telecom', 'Bank', 'Foods', 'Wear', 'Studios', 'Periféricos',
                   'Bebidas', 'Seguros', 'Tech', 'Mídia', 'Motors'])[1 + floor(random() * 14)::int] AS nome
-    FROM generate_series(1, 3000 + floor(random() * 400)::int)
+    FROM generate_series(1, 80000 + floor(random() * 8000)::int)
 ) AS s;
 
 INSERT INTO EmpresaPais (nro_empresa, ddi_pais, id_nacional)
@@ -110,13 +112,14 @@ FROM (
                    || (ARRAY['Wolf', 'Ninja', 'Gamer', 'Sniper', 'Dragon', 'Panda', 'Knight', 'Hunter', 'Wizard', 'Tiger',
                              'Falcon', 'Viper', 'Rider', 'Pirate', 'Samurai', 'Gorila', 'Coruja', 'Jaguar', 'Tucano', 'Capivara',
                              'Player', 'Noob', 'Slayer', 'Master', 'Killer', 'Bot', 'Fox', 'Bear', 'Shark', 'Hawk'])[1 + floor(random() * 30)::int]
-                   || CASE WHEN random() < 0.92 THEN floor(random() * 1000)::int::text ELSE '' END AS nick
-            FROM generate_series(1, 10900)
+                   || CASE WHEN random() < 0.92 THEN floor(random() * 100000)::int::text ELSE '' END AS nick
+            FROM generate_series(1, 880000)
         ) AS a
     ) AS d
     ORDER BY random()
 ) AS s;
 
+-- 17% dos usuários viram streamers
 CREATE TEMP TABLE tmp_streamer ON COMMIT DROP AS
 SELECT row_number() OVER (ORDER BY random()) AS n, id_usuario, pais_residencia
 FROM Usuario
@@ -131,6 +134,7 @@ FROM (SELECT *, 1 + (random() < 0.12)::int AS qtd FROM tmp_streamer) AS s,
      generate_series(1, s.qtd) AS k
 ON CONFLICT DO NOTHING;
 
+-- poucas plataformas concentram a maior parte dos canais
 INSERT INTO Canal (nome, nro_plataforma, id_streamer, tipo, data_inicio, descricao)
 SELECT c.nome, c.nro_plataforma, c.id_streamer,
        CASE WHEN c.r < 0.7 THEN 'público' WHEN c.r < 0.9 THEN 'misto' ELSE 'privado' END,
@@ -176,7 +180,7 @@ INSERT INTO Patrocinio (nro_empresa, id_canal, valor)
 SELECT 1 + floor(random() * e.ne)::int,
        1 + floor(c.nc * power(random(), 2))::int,
        round(power(10, 2.7 + random() * 2.6)::numeric, 2)
-FROM generate_series(1, 3400 + floor(random() * 300)::int),
+FROM generate_series(1, 270000 + floor(random() * 9000)::int),
      (SELECT count(*) AS ne FROM Empresa) AS e, (SELECT count(*) AS nc FROM Canal) AS c
 ON CONFLICT DO NOTHING;
 
@@ -185,12 +189,13 @@ SELECT s.id_canal, s.id_membro, 1 + floor(5 * power(random(), 2.5))::int
 FROM (
     SELECT 1 + floor(c.nc * power(random(), 2))::int AS id_canal,
            1 + floor(random() * u.nu)::int AS id_membro
-    FROM generate_series(1, 10600 + floor(random() * 300)::int),
+    FROM generate_series(1, 830000 + floor(random() * 9000)::int),
          (SELECT count(*) AS nc FROM Canal) AS c, (SELECT count(*) AS nu FROM Usuario) AS u
 ) AS s
 JOIN Canal c ON c.id_canal = s.id_canal AND c.id_streamer <> s.id_membro
 ON CONFLICT DO NOTHING;
 
+-- poucos canais concentram a maior parte dos vídeos
 INSERT INTO Video (id_canal, titulo, dataH, tema, duracao, visu_simul, visu_total)
 SELECT c.id_canal,
        (ARRAY['Gameplay de', 'Live de', 'Jogando', 'Torneio de', 'Speedrun de', 'Review de', 'Rankeada de',
@@ -204,7 +209,7 @@ FROM (
     SELECT 1 + floor(c.nc * power(random(), 2))::int AS id_canal,
            1 + floor(random() * 24)::int AS jogo,
            floor(power(10, 1.7 + random() * 5))::bigint AS visu
-    FROM generate_series(1, 10600 + floor(random() * 400)::int), (SELECT count(*) AS nc FROM Canal) AS c
+    FROM generate_series(1, 800000 + floor(random() * 9000)::int), (SELECT count(*) AS nc FROM Canal) AS c
 ) AS s
 JOIN Canal c ON c.id_canal = s.id_canal
 JOIN (VALUES
@@ -222,7 +227,7 @@ INSERT INTO Participa (id_video, id_streamer)
 SELECT s.id_video, t.id_usuario
 FROM (
     SELECT 1 + floor(random() * v.nv)::int AS id_video, 1 + floor(random() * st.ns)::int AS n
-    FROM generate_series(1, 3500 + floor(random() * 300)::int),
+    FROM generate_series(1, 270000 + floor(random() * 9000)::int),
          (SELECT count(*) AS nv FROM Video) AS v, (SELECT count(*) AS ns FROM tmp_streamer) AS st
 ) AS s
 JOIN tmp_streamer t ON t.n = s.n
@@ -230,6 +235,7 @@ JOIN Video v ON v.id_video = s.id_video
 JOIN Canal c ON c.id_canal = v.id_canal AND c.id_streamer <> t.id_usuario
 ON CONFLICT DO NOTHING;
 
+-- 60% dos comentários são online; o seq já sai numerado por vídeo e usuário
 CREATE TEMP TABLE tmp_coment ON COMMIT DROP AS
 SELECT id_video, id_usuario, coment_on, dataH,
        row_number() OVER (PARTITION BY id_video, id_usuario ORDER BY dataH) AS seq
@@ -244,7 +250,7 @@ FROM (
             SELECT 1 + floor(v.nv * power(random(), 2))::int AS id_video,
                    1 + floor(u.nu * power(random(), 2))::int AS id_usuario,
                    1 + floor(4 * power(random(), 3))::int AS qtd
-            FROM generate_series(1, 6700 + floor(random() * 300)::int),
+            FROM generate_series(1, 470000 + floor(random() * 9000)::int),
                  (SELECT count(*) AS nv FROM Video) AS v, (SELECT count(*) AS nu FROM Usuario) AS u
         ) AS s
         CROSS JOIN generate_series(1, s.qtd)
@@ -261,6 +267,7 @@ SELECT id_video, id_usuario, seq,
        dataH, coment_on
 FROM tmp_coment;
 
+-- 45% dos comentários têm doação, com valor na moeda do país do doador
 CREATE TEMP TABLE tmp_doacao ON COMMIT DROP AS
 SELECT t.id_video, t.id_usuario, t.seq AS seq_comentario, k AS seq_pg, t.dataH,
        round((power(10, random() * 2.5) / cv.fator_conver)::numeric, 2) AS valor,
@@ -307,6 +314,7 @@ FROM tmp_doacao t
 JOIN Doacao d USING (id_video, id_usuario, seq_comentario, seq_pg)
 WHERE t.r_forma >= 0.80;
 
+-- acerta os derivados no fim, porque os triggers ainda não existem
 UPDATE Canal c
 SET qtd_videos = s.n, qtd_visualizacoes = s.v
 FROM (SELECT id_canal, count(*) AS n, sum(visu_total) AS v FROM Video GROUP BY id_canal) AS s

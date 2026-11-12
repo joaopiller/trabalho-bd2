@@ -15,6 +15,10 @@ DROP TRIGGER IF EXISTS paypal_subtipo_bi ON PayPal;
 DROP TRIGGER IF EXISTS cartaocredito_subtipo_bi ON CartaoCredito;
 DROP TRIGGER IF EXISTS mecanismoplat_subtipo_bi ON MecanismoPlat;
 DROP TRIGGER IF EXISTS participa_dono_bi ON Participa;
+DROP TRIGGER IF EXISTS bitcoin_forma_ad ON BitCoin;
+DROP TRIGGER IF EXISTS paypal_forma_ad ON PayPal;
+DROP TRIGGER IF EXISTS cartaocredito_forma_ad ON CartaoCredito;
+DROP TRIGGER IF EXISTS mecanismoplat_forma_ad ON MecanismoPlat;
 
 -- numera o comentário (seq por vídeo e usuário) e barra data anterior à do vídeo
 CREATE OR REPLACE FUNCTION trg_comentario_insere() RETURNS trigger AS $$
@@ -192,6 +196,10 @@ FOR EACH ROW EXECUTE PROCEDURE trg_doacao_subtipo();
 -- e precisa ter uma; checado só no commit porque a forma é inserida depois da doação
 CREATE OR REPLACE FUNCTION trg_doacao_total() RETURNS trigger AS $$
 BEGIN
+    -- a doação pode ter sido apagada antes do commit
+    IF NOT EXISTS (SELECT 1 FROM Doacao WHERE id_doacao = NEW.id_doacao) THEN
+        RETURN NULL;
+    END IF;
     IF NOT (EXISTS (SELECT 1 FROM BitCoin WHERE id_doacao = NEW.id_doacao)
             OR EXISTS (SELECT 1 FROM PayPal WHERE id_doacao = NEW.id_doacao)
             OR EXISTS (SELECT 1 FROM CartaoCredito WHERE id_doacao = NEW.id_doacao)
@@ -206,6 +214,40 @@ CREATE CONSTRAINT TRIGGER doacao_total_ai
 AFTER INSERT ON Doacao
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE PROCEDURE trg_doacao_total();
+
+-- tirar a forma de pagamento não pode deixar a doação sem nenhuma
+CREATE OR REPLACE FUNCTION trg_forma_remove() RETURNS trigger AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM Doacao WHERE id_doacao = OLD.id_doacao)
+       AND NOT (EXISTS (SELECT 1 FROM BitCoin WHERE id_doacao = OLD.id_doacao)
+                OR EXISTS (SELECT 1 FROM PayPal WHERE id_doacao = OLD.id_doacao)
+                OR EXISTS (SELECT 1 FROM CartaoCredito WHERE id_doacao = OLD.id_doacao)
+                OR EXISTS (SELECT 1 FROM MecanismoPlat WHERE id_doacao = OLD.id_doacao)) THEN
+        RAISE EXCEPTION 'Doação % sem forma de pagamento', OLD.id_doacao;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER bitcoin_forma_ad
+AFTER DELETE OR UPDATE OF id_doacao ON BitCoin
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE trg_forma_remove();
+
+CREATE CONSTRAINT TRIGGER paypal_forma_ad
+AFTER DELETE OR UPDATE OF id_doacao ON PayPal
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE trg_forma_remove();
+
+CREATE CONSTRAINT TRIGGER cartaocredito_forma_ad
+AFTER DELETE OR UPDATE OF id_doacao ON CartaoCredito
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE trg_forma_remove();
+
+CREATE CONSTRAINT TRIGGER mecanismoplat_forma_ad
+AFTER DELETE OR UPDATE OF id_doacao ON MecanismoPlat
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE PROCEDURE trg_forma_remove();
 
 -- o dono do canal não é cadastrado como participante
 CREATE OR REPLACE FUNCTION trg_participa_dono() RETURNS trigger AS $$

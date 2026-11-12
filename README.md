@@ -28,7 +28,7 @@ Não use a opção `-1` (`--single-transaction`): o `02_carga.sql` executa `VACU
 
 A ordem importa. A carga é feita antes da criação dos triggers e dos índices de apoio para que a inserção em massa não pague esse custo.
 
-Ao final do `02_carga.sql` é exibida a quantidade de tuplas de cada tabela. Os dados são sorteados com semente fixa, então a carga é a mesma em toda execução.
+Ao final do `02_carga.sql` é exibida a quantidade de tuplas de cada tabela. O enunciado pede de 1.000 a 10.000 tuplas por tabela; por orientação do professor em reunião, o volume foi aumentado. Usuários, contas por plataforma, vídeos, comentários, inscrições e níveis de canal ficam com cerca de 800 mil tuplas cada; canais, doações, patrocínios e participações ficam entre 170 mil e 390 mil; só países, moedas e plataformas ficam perto de mil, porque não faz sentido existirem centenas de milhares deles. O banco ocupa cerca de 1,1 GB. A carga leva de 1 a 2 minutos e o `04_visoes.sql` cerca de 10 segundos. Os dados são sorteados com semente fixa, então a carga é a mesma em toda execução.
 
 Para refazer tudo do zero:
 
@@ -44,7 +44,7 @@ createdb streamers
 | `01_schema.sql` | As 20 tabelas do modelo relacional, com identificadores artificiais, `UNIQUE`, `NOT NULL` e `CHECK` |
 | `02_carga.sql` | Carga de dados artificiais |
 | `03_triggers.sql` | Triggers de consistência e a função `recalcular_derivados()` |
-| `04_visoes.sql` | 2 visões materializadas, 3 visões virtuais, os 5 índices de apoio e a função `atualizar_visoes()` |
+| `04_visoes.sql` | 2 visões materializadas, 3 visões virtuais, os 5 índices de apoio (todos nas materializadas) e a função `atualizar_visoes()` |
 | `05_funcoes.sql` | As 12 consultas do enunciado, como functions |
 
 ## Consultas
@@ -68,16 +68,16 @@ Os filtros opcionais podem ser omitidos. Eles usam as chaves do modelo: nro da p
 
 Nas consultas 2 e 7, `p_plataforma` só é necessário quando existe canal com o mesmo nome em mais de uma plataforma, já que o canal é identificado por (nome, plataforma).
 
-Exemplos sem filtro:
+Exemplos sem filtro. As consultas 1 a 7 devolvem todas as linhas (centenas de milhares neste volume), por isso os exemplos usam `LIMIT` só para a tela não encher:
 
 ```sql
-SELECT * FROM streamers_mais_videos();
-SELECT * FROM videos_mais_comentados();
-SELECT * FROM canais_por_interacoes();
-SELECT * FROM canais_por_media_doacao();
-SELECT * FROM patrocinios_por_empresa();
-SELECT * FROM gasto_dos_membros();
-SELECT * FROM canais_com_doacao();
+SELECT * FROM streamers_mais_videos() LIMIT 20;
+SELECT * FROM videos_mais_comentados() LIMIT 20;
+SELECT * FROM canais_por_interacoes() LIMIT 20;
+SELECT * FROM canais_por_media_doacao() LIMIT 20;
+SELECT * FROM patrocinios_por_empresa() LIMIT 20;
+SELECT * FROM gasto_dos_membros() LIMIT 20;
+SELECT * FROM canais_com_doacao() LIMIT 20;
 SELECT * FROM top_canais_patrocinio(10);
 SELECT * FROM top_canais_membros(10);
 SELECT * FROM top_canais_doacoes(10);
@@ -110,17 +110,18 @@ E então, trocando pelos valores retornados:
 
 ```sql
 SELECT * FROM videos_mais_comentados('nome do canal');
-SELECT * FROM canais_com_doacao('nome do canal', 1);
+SELECT * FROM canais_com_doacao('nome do canal', 370);   -- o nro_plataforma que veio junto com o canal
 SELECT * FROM canais_por_interacoes('nick do streamer');
 SELECT * FROM gasto_dos_membros('nick do membro');
 ```
 
 ## Atualização dos dados derivados
 
-As consultas 2, 3, 4 e 7 a 11 leem as visões materializadas. Depois de inserir, alterar ou remover dados, é preciso atualizá-las para que as mudanças apareçam:
+As consultas 1 a 4 e 7 a 12 leem as visões materializadas; só a 5 e a 6 são calculadas na hora. Depois de inserir, alterar ou remover dados, é preciso atualizar as visões para que as mudanças apareçam, nesta ordem (o resumo por canal guarda as visualizações que a primeira função recalcula):
 
 ```sql
-SELECT recalcular_derivados();   -- qtd_users das plataformas e qtd_visualizacoes dos canais
+SELECT recalcular_derivados();   -- qtd_users das plataformas, qtd_videos e qtd_visualizacoes dos canais
 SELECT atualizar_visoes();       -- visões materializadas, sem bloquear leituras
-SELECT atualizar_visoes(TRUE);   -- também refaz o CLUSTER (bloqueia as visões enquanto roda)
 ```
+
+O `REFRESH` desfaz aos poucos a ordem física que o `CLUSTER` deu às visões, e os filtros por plataforma e por canal passam a ler mais páginas. Depois de uma carga grande de alterações, use `SELECT atualizar_visoes(TRUE);` no lugar da segunda linha: ela também refaz o `CLUSTER`, e bloqueia as visões enquanto roda.

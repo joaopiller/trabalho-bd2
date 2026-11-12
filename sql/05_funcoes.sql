@@ -28,19 +28,16 @@ RETURNS TABLE (streamer VARCHAR, qtd_videos BIGINT, visualizacoes NUMERIC) AS $$
 BEGIN
     IF p_plataforma IS NULL THEN
         RETURN QUERY
-        SELECT u.nick, t.videos, t.visu
-          FROM (SELECT s.id_streamer,
-                       SUM(s.qtd_videos)::BIGINT AS videos,
-                       SUM(s.qtd_visualizacoes) AS visu
-                  FROM vw_streamer_plataforma s
-                 GROUP BY s.id_streamer) AS t
-          JOIN Usuario u ON u.id_usuario = t.id_streamer
-         ORDER BY t.videos DESC, t.visu DESC;
+        SELECT m.streamer,
+               SUM(m.qtd_videos)::BIGINT AS videos,
+               SUM(m.qtd_visualizacoes) AS visu
+          FROM mv_resumo_canal m
+         GROUP BY m.id_streamer, m.streamer
+         ORDER BY videos DESC, visu DESC;
     ELSE
         RETURN QUERY
-        SELECT u.nick, s.qtd_videos, s.qtd_visualizacoes
+        SELECT s.streamer, s.qtd_videos, s.qtd_visualizacoes
           FROM vw_streamer_plataforma s
-          JOIN Usuario u ON u.id_usuario = s.id_streamer
          WHERE s.nro_plataforma = p_plataforma
          ORDER BY s.qtd_videos DESC, s.qtd_visualizacoes DESC;
     END IF;
@@ -57,17 +54,19 @@ BEGIN
     IF p_canal IS NULL THEN
         RETURN QUERY
         SELECT i.canal, i.nro_plataforma, i.titulo, i.dataH,
-               i.coment_online, i.coment_offline, i.total_comentarios
+               i.coment_online::BIGINT, i.coment_offline::BIGINT,
+               (i.coment_online + i.coment_offline)::BIGINT
           FROM mv_interacoes_video i
-         ORDER BY i.total_comentarios DESC;
+         ORDER BY i.coment_online + i.coment_offline DESC;
     ELSE
         v_canal := id_do_canal(p_canal, p_plataforma);
         RETURN QUERY
         SELECT i.canal, i.nro_plataforma, i.titulo, i.dataH,
-               i.coment_online, i.coment_offline, i.total_comentarios
+               i.coment_online::BIGINT, i.coment_offline::BIGINT,
+               (i.coment_online + i.coment_offline)::BIGINT
           FROM mv_interacoes_video i
          WHERE i.id_canal = v_canal
-         ORDER BY i.total_comentarios DESC;
+         ORDER BY i.coment_online + i.coment_offline DESC;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -102,14 +101,14 @@ BEGIN
     IF p_plataforma IS NULL THEN
         RETURN QUERY
         SELECT m.nome, m.nro_plataforma, round(m.doacoes_usd / m.coment_com_doacao, 2),
-               m.qtd_doacoes, round(m.doacoes_usd, 2)
+               m.qtd_doacoes::BIGINT, round(m.doacoes_usd, 2)
           FROM mv_resumo_canal m
          WHERE m.qtd_doacoes > 0
          ORDER BY 3 DESC;
     ELSE
         RETURN QUERY
         SELECT m.nome, m.nro_plataforma, round(m.doacoes_usd / m.coment_com_doacao, 2),
-               m.qtd_doacoes, round(m.doacoes_usd, 2)
+               m.qtd_doacoes::BIGINT, round(m.doacoes_usd, 2)
           FROM mv_resumo_canal m
          WHERE m.nro_plataforma = p_plataforma AND m.qtd_doacoes > 0
          ORDER BY 3 DESC;
@@ -172,7 +171,8 @@ BEGIN
         RETURN QUERY
         SELECT m.nome, m.nro_plataforma, round(m.doacoes_usd, 2)
           FROM mv_resumo_canal m
-         WHERE m.id_canal = v_canal AND m.qtd_doacoes > 0;
+         WHERE m.nro_plataforma = (SELECT c.nro_plataforma FROM Canal c WHERE c.id_canal = v_canal)
+           AND m.id_canal = v_canal AND m.qtd_doacoes > 0;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
@@ -185,7 +185,7 @@ BEGIN
     SELECT m.nome, m.nro_plataforma, m.patrocinio_usd
       FROM mv_resumo_canal m
      WHERE m.patrocinio_usd > 0
-     ORDER BY m.patrocinio_usd DESC
+     ORDER BY m.patrocinio_usd DESC, m.id_canal
      LIMIT p_k;
 END;
 $$ LANGUAGE plpgsql;
@@ -195,10 +195,10 @@ CREATE OR REPLACE FUNCTION top_canais_membros(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, qtd_membros BIGINT, membros_usd_mes NUMERIC) AS $$
 BEGIN
     RETURN QUERY
-    SELECT m.nome, m.nro_plataforma, m.qtd_membros, m.membros_usd_mes
+    SELECT m.nome, m.nro_plataforma, m.qtd_membros::BIGINT, m.membros_usd_mes
       FROM mv_resumo_canal m
      WHERE m.membros_usd_mes > 0
-     ORDER BY m.membros_usd_mes DESC
+     ORDER BY m.membros_usd_mes DESC, m.id_canal
      LIMIT p_k;
 END;
 $$ LANGUAGE plpgsql;
@@ -208,10 +208,10 @@ CREATE OR REPLACE FUNCTION top_canais_doacoes(p_k INTEGER)
 RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, qtd_doacoes BIGINT, doacoes_usd NUMERIC) AS $$
 BEGIN
     RETURN QUERY
-    SELECT m.nome, m.nro_plataforma, m.qtd_doacoes, round(m.doacoes_usd, 2)
+    SELECT m.nome, m.nro_plataforma, m.qtd_doacoes::BIGINT, round(m.doacoes_usd, 2)
       FROM mv_resumo_canal m
      WHERE m.doacoes_usd > 0
-     ORDER BY m.doacoes_usd DESC
+     ORDER BY m.doacoes_usd DESC, m.id_canal
      LIMIT p_k;
 END;
 $$ LANGUAGE plpgsql;
@@ -223,9 +223,10 @@ RETURNS TABLE (canal VARCHAR, nro_plataforma INTEGER, patrocinio_usd NUMERIC,
 BEGIN
     RETURN QUERY
     SELECT m.nome, m.nro_plataforma, m.patrocinio_usd, m.membros_usd_mes,
-           round(m.doacoes_usd, 2), round(m.receita_usd, 2)
+           round(m.doacoes_usd, 2),
+           round(m.patrocinio_usd + m.membros_usd_mes + m.doacoes_usd, 2)
       FROM mv_resumo_canal m
-     ORDER BY m.receita_usd DESC
+     ORDER BY m.patrocinio_usd + m.membros_usd_mes + m.doacoes_usd DESC, m.id_canal
      LIMIT p_k;
 END;
 $$ LANGUAGE plpgsql;
@@ -242,10 +243,10 @@ BEGIN
                        SUM(s.qtd_canais)::BIGINT AS canais
                   FROM vw_streamer_plataforma s
                  GROUP BY s.nro_plataforma
-                 ORDER BY 2 DESC, 3 DESC
+                 ORDER BY 2 DESC, 3 DESC, s.nro_plataforma
                  LIMIT p_k) AS t
           JOIN Plataforma pl ON pl.nro = t.nro_plataforma
-         ORDER BY t.streamers DESC, t.canais DESC;
+         ORDER BY t.streamers DESC, t.canais DESC, t.nro_plataforma;
     ELSE
         RETURN QUERY
         SELECT pl.nome, COUNT(*), SUM(s.qtd_canais)::BIGINT
